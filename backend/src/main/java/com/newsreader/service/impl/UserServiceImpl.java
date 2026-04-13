@@ -28,11 +28,26 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Map<String, Object> login(LoginDTO dto) {
+        String username = dto.getUsername() == null ? null : dto.getUsername().trim();
         User user = userMapper.selectOne(
-                new LambdaQueryWrapper<User>().eq(User::getUsername, dto.getUsername()));
-        if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (user == null) {
             throw new RuntimeException("用户名或密码错误");
         }
+
+        // 兼容历史明文密码数据：登录成功后自动升级为 BCrypt
+        boolean passwordMatched = passwordEncoder.matches(dto.getPassword(), user.getPassword());
+        if (!passwordMatched && dto.getPassword().equals(user.getPassword())) {
+            User patch = new User();
+            patch.setId(user.getId());
+            patch.setPassword(passwordEncoder.encode(dto.getPassword()));
+            userMapper.updateById(patch);
+            passwordMatched = true;
+        }
+        if (!passwordMatched) {
+            throw new RuntimeException("用户名或密码错误");
+        }
+
         String token = jwtUtil.generateToken(user.getId(), user.getUsername());
         user.setPassword(null);
 
@@ -44,17 +59,19 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void register(RegisterDTO dto) {
+        String username = dto.getUsername() == null ? null : dto.getUsername().trim();
         Long count = userMapper.selectCount(
-                new LambdaQueryWrapper<User>().eq(User::getUsername, dto.getUsername()));
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
         if (count > 0) {
             throw new RuntimeException("用户名已存在");
         }
         User user = new User();
-        user.setUsername(dto.getUsername());
+        user.setUsername(username);
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setEmail(dto.getEmail());
         user.setLevel(dto.getLevel() != null ? dto.getLevel() : "BEGINNER");
         user.setInterests(dto.getInterests());
+        user.setDeleted(0);
         userMapper.insert(user);
     }
 
