@@ -3,14 +3,24 @@
     <section class="hero-panel">
       <div class="hero-copy">
         <p class="eyebrow">NEWSREADER DAILY</p>
-        <h1>把英语新闻阅读，整理成一份更适合持续输入的晨报。</h1>
+        <h1>让阅读更容易</h1>
+        <p class="hero-subtitle">Daily English Briefing</p>
         <p class="hero-desc">
           聚合国际资讯、按难度分层，并接入 DeepSeek 做摘要、关键词和练习增强，让阅读、理解与复盘连成一个流程。
         </p>
 
+        <div class="hero-points">
+          <span class="hero-point">新闻聚合</span>
+          <span class="hero-point">分级阅读</span>
+          <span class="hero-point">AI 辅助学习</span>
+        </div>
+
         <div class="hero-actions">
-          <el-button type="primary" size="large" :icon="Refresh" @click="fetchNews" :loading="fetching">
-            更新今日新闻
+          <el-button type="primary" size="large" :icon="Setting" @click="goToNewsManage">
+            进入新闻管理
+          </el-button>
+          <el-button size="large" :icon="Opportunity" @click="goToRecommend">
+            智能推荐
           </el-button>
           <el-button size="large" :icon="Setting" @click="openApiKeyDialog">
             配置 Key
@@ -139,11 +149,11 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getArticlesApi, fetchNewsApi } from '@/api/news'
+import { getArticlesApi } from '@/api/news'
 import { getApiKeyStatusApi, saveApiKeysApi } from '@/api/system'
 import ArticleCard from '@/components/ArticleCard.vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Setting } from '@element-plus/icons-vue'
+import { Opportunity, Search, Setting } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const articles = ref([])
@@ -151,7 +161,6 @@ const total = ref(0)
 const pageNum = ref(1)
 const pageSize = ref(12)
 const loading = ref(false)
-const fetching = ref(false)
 const searchKeyword = ref('')
 const filterCategory = ref('')
 const filterDifficulty = ref('')
@@ -197,23 +206,12 @@ function handlePageChange(page) {
   loadArticles(false)
 }
 
-async function fetchNews() {
-  if (!hasNewsApiKey.value) {
-    ElMessage.warning('请先配置 NewsAPI Key')
-    apiKeyDialogVisible.value = true
-    return
-  }
+function goToNewsManage() {
+  router.push('/news-manage')
+}
 
-  fetching.value = true
-  try {
-    const result = await fetchNewsApi()
-    ElMessage.success(
-      `拉取完成：抓取 ${result.fetched} 条，新增 ${result.inserted} 条，重复 ${result.duplicated} 条，内容不足跳过 ${result.skippedNoContent} 条`
-    )
-    setTimeout(() => loadArticles(true), 3000)
-  } finally {
-    fetching.value = false
-  }
+function goToRecommend() {
+  router.push('/recommend')
 }
 
 async function loadApiKeyStatus() {
@@ -292,7 +290,7 @@ onMounted(async () => {
 
 .hero-panel {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
   gap: 20px;
   padding: 32px;
   background:
@@ -319,22 +317,48 @@ onMounted(async () => {
 .hero-copy h1 {
   font-size: clamp(32px, 4.2vw, 52px);
   line-height: 1.08;
-  max-width: 12ch;
+  max-width: none;
+}
+
+.hero-subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8b5a3c;
 }
 
 .hero-desc {
   margin-top: 18px;
-  max-width: 680px;
+  max-width: 560px;
   font-size: 16px;
   line-height: 1.9;
   color: var(--muted);
+}
+
+.hero-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hero-point {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #7f4732;
+  background: rgba(163, 58, 43, 0.1);
+  border: 1px solid rgba(163, 58, 43, 0.15);
 }
 
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 26px;
+  margin-top: 50px;
 }
 
 .hero-aside {

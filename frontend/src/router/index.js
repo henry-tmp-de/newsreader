@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
 const routes = [
@@ -40,6 +40,16 @@ const routes = [
         component: () => import('@/views/Dashboard.vue'),
       },
       {
+        path: 'news-manage',
+        name: 'NewsManage',
+        component: () => import('@/views/NewsManage.vue'),
+      },
+      {
+        path: 'recommend',
+        name: 'Recommend',
+        component: () => import('@/views/Recommend.vue'),
+      },
+      {
         path: 'progress',
         name: 'Progress',
         component: () => import('@/views/Progress.vue'),
@@ -54,7 +64,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // Use hash history to avoid blank page on direct refresh of nested routes.
+  history: createWebHashHistory(),
   routes,
 })
 

@@ -57,7 +57,8 @@ public class ArticleServiceImpl implements ArticleService {
         this.objectMapper = objectMapper;
     }
 
-        private static RestTemplate buildRestTemplate() {
+    @SuppressWarnings("null")
+    private static RestTemplate buildRestTemplate() {
         // 让 Java 读取 Windows 系统代理设置（如 Clash/V2Ray）
         System.setProperty("java.net.useSystemProxies", "true");
         SystemDefaultRoutePlanner routePlanner =
@@ -100,17 +101,25 @@ public class ArticleServiceImpl implements ArticleService {
     @Scheduled(fixedDelay = 3600000) // 每小时拉取一次
     @SuppressWarnings("null")
     public NewsFetchResultDTO fetchAndSaveFromNewsAPI() {
+        return fetchAndSaveFromNewsAPI(null, 10);
+    }
+
+    @Override
+    @SuppressWarnings("null")
+    public NewsFetchResultDTO fetchAndSaveFromNewsAPI(List<String> categories, Integer pageSize) {
         String newsApiKey = systemConfigService.getNewsApiKey();
         if (!StringUtils.hasText(newsApiKey) || newsApiKey.contains("your_newsapi_key")) {
             throw new RuntimeException("请先在系统配置中填写 NewsAPI Key");
         }
 
         NewsFetchResultDTO result = new NewsFetchResultDTO();
-        String[] categories = {"technology", "science", "health", "business", "sports"};
-        for (String category : categories) {
+        List<String> selectedCategories = normalizeCategories(categories);
+        int safePageSize = normalizePageSize(pageSize);
+
+        for (String category : selectedCategories) {
             try {
-                String url = String.format("%s/top-headlines?category=%s&language=en&pageSize=10&apiKey=%s",
-                        NEWS_API_BASE_URL, category, newsApiKey);
+                String url = String.format("%s/top-headlines?category=%s&language=en&pageSize=%d&apiKey=%s",
+                    NEWS_API_BASE_URL, category, safePageSize, newsApiKey);
                 var responseEntity = restTemplate.getForEntity(java.net.URI.create(url), String.class);
                 String response = responseEntity.getBody();
                 if (!StringUtils.hasText(response)) {
@@ -153,6 +162,74 @@ public class ArticleServiceImpl implements ArticleService {
         result.setEnqueuedForEnrichment(result.getInserted());
         articleEnrichmentService.enrichPendingArticlesAsync();
         return result;
+    }
+
+    private List<String> normalizeCategories(List<String> categories) {
+        List<String> all = List.of("technology", "science", "health", "business", "sports");
+        if (categories == null || categories.isEmpty()) {
+            return all;
+        }
+        List<String> normalized = categories.stream()
+                .map(v -> v == null ? "" : v.trim().toLowerCase())
+                .filter(all::contains)
+                .distinct()
+                .toList();
+        return normalized.isEmpty() ? all : normalized;
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        if (pageSize == null) return 10;
+        return Math.max(1, Math.min(50, pageSize));
+    }
+
+    @Override
+    public int deleteArticleById(Long id) {
+        if (id == null) {
+            return 0;
+        }
+        return articleMapper.deleteById(id);
+    }
+
+    @Override
+    public int deleteArticlesByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        List<Long> safeIds = ids.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .toList();
+        if (safeIds.isEmpty()) {
+            return 0;
+        }
+        return articleMapper.deleteBatchIds(safeIds);
+    }
+
+    @Override
+    public int clearAllArticles() {
+        int totalDeleted = 0;
+        while (true) {
+            List<Long> ids = articleMapper.selectList(
+                            new LambdaQueryWrapper<Article>()
+                                    .select(Article::getId)
+                                    .orderByAsc(Article::getId)
+                                    .last("limit 500"))
+                    .stream()
+                    .map(Article::getId)
+                    .filter(id -> id != null && id > 0)
+                    .toList();
+
+            if (ids.isEmpty()) {
+                break;
+            }
+
+            int deleted = articleMapper.deleteBatchIds(ids);
+            totalDeleted += deleted;
+            if (deleted <= 0) {
+                break;
+            }
+        }
+        return totalDeleted;
     }
 
     private SaveOutcome saveArticleFromNode(JsonNode node, String category) {

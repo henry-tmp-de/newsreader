@@ -1,5 +1,9 @@
 <template>
-  <div class="vocabulary-page">
+  <div
+    class="vocabulary-page"
+    v-loading="loading"
+    element-loading-background="rgba(247, 242, 231, 0.72)"
+  >
     <section class="hero paper page-header">
       <div>
         <p class="kicker">VOCABULARY NOTEBOOK</p>
@@ -14,7 +18,7 @@
       />
     </section>
 
-    <div v-loading="loading" class="paper table-wrap">
+    <div class="paper table-wrap">
       <el-table :data="filteredList" stripe border style="width: 100%; border-radius: 12px; overflow: hidden">
         <el-table-column prop="word" label="单词" width="160">
           <template #default="{ row }">
@@ -105,7 +109,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.vocabulary-page { display: flex; flex-direction: column; gap: 20px; }
+.vocabulary-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: calc(100vh - 140px);
+}
 .paper {
   border: 1px solid rgba(24, 34, 45, 0.1);
   border-radius: 24px;

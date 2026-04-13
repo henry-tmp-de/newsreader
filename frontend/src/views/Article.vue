@@ -1,10 +1,11 @@
 <template>
-  <div
-    class="article-page"
-    v-loading="loading"
-    element-loading-background="rgba(247, 242, 231, 0.72)"
-  >
-    <template v-if="article">
+  <div class="article-page">
+    <template v-if="loading">
+      <section class="paper article-skeleton">
+        <el-skeleton :rows="8" animated />
+      </section>
+    </template>
+    <template v-else-if="article">
       <div class="layout-grid">
         <main class="article-main">
           <section class="paper article-header">
@@ -216,6 +217,11 @@ onMounted(async () => {
   --line: rgba(24, 34, 45, 0.1);
   --ink: #18222d;
   --muted: #64707d;
+  min-height: calc(100vh - 140px);
+}
+
+.article-skeleton {
+  min-height: calc(100vh - 150px);
 }
 
 .layout-grid {

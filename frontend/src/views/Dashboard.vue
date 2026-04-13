@@ -1,5 +1,9 @@
 <template>
-  <div class="dashboard" v-loading="loading">
+  <div
+    class="dashboard"
+    v-loading="loading"
+    element-loading-background="rgba(247, 242, 231, 0.72)"
+  >
     <section class="hero paper">
       <p class="kicker">LEARNING BRIEF</p>
       <h2 class="page-title">学习看板</h2>
@@ -121,7 +125,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.dashboard { display: flex; flex-direction: column; gap: 20px; }
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: calc(100vh - 140px);
+}
 .paper {
   border: 1px solid rgba(24, 34, 45, 0.1);
   border-radius: 24px;

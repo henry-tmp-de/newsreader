@@ -21,6 +21,14 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>学习看板</span>
         </el-menu-item>
+        <el-menu-item index="/news-manage">
+          <el-icon><Setting /></el-icon>
+          <span>新闻管理</span>
+        </el-menu-item>
+        <el-menu-item index="/recommend">
+          <el-icon><Opportunity /></el-icon>
+          <span>智能推荐</span>
+        </el-menu-item>
         <el-menu-item index="/progress">
           <el-icon><TrendCharts /></el-icon>
           <span>学习进度</span>
@@ -88,6 +96,8 @@ const userStore = useUserStore()
 const pageTitleMap = {
   '/': '新闻列表',
   '/dashboard': '学习看板',
+  '/news-manage': '新闻管理',
+  '/recommend': '智能推荐',
   '/progress': '学习进度',
   '/vocabulary': '我的词句',
 }
@@ -111,6 +121,10 @@ function handleCommand(cmd) {
 </script>
 
 <style scoped>
+.layout-root {
+  height: 100vh;
+}
+
 .sidebar {
   background:
     radial-gradient(circle at top left, rgba(222, 143, 85, 0.22), transparent 35%),
@@ -183,6 +197,7 @@ function handleCommand(cmd) {
     linear-gradient(180deg, #f7f2e7, #f0e7d8);
   padding: 20px;
   overflow-y: auto;
+  min-height: 0;
 }
 .paper-lite {
   border: 1px solid rgba(24, 34, 45, 0.08);
@@ -191,6 +206,6 @@ function handleCommand(cmd) {
   padding: 18px;
 }
 .route-fallback {
-  min-height: calc(100vh - 150px);
+  min-height: calc(100vh - 130px);
 }
 </style>
