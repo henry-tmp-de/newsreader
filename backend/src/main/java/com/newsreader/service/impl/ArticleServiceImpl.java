@@ -10,8 +10,16 @@ import com.newsreader.service.ArticleService;
 import com.newsreader.service.SystemConfigService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,6 +29,8 @@ import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class ArticleServiceImpl implements ArticleService {
@@ -34,6 +44,7 @@ public class ArticleServiceImpl implements ArticleService {
     private final ObjectMapper objectMapper;
 
     private static final String NEWS_API_BASE_URL = "https://newsapi.org/v2";
+    private static final int MIN_ARTICLE_CONTENT_LENGTH = 120;
 
     public ArticleServiceImpl(ArticleMapper articleMapper,
                               SystemConfigService systemConfigService,
@@ -42,9 +53,24 @@ public class ArticleServiceImpl implements ArticleService {
         this.articleMapper = articleMapper;
         this.systemConfigService = systemConfigService;
         this.articleEnrichmentService = articleEnrichmentService;
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = buildRestTemplate();
         this.objectMapper = objectMapper;
     }
+
+        private static RestTemplate buildRestTemplate() {
+        // 让 Java 读取 Windows 系统代理设置（如 Clash/V2Ray）
+        System.setProperty("java.net.useSystemProxies", "true");
+        SystemDefaultRoutePlanner routePlanner =
+            new SystemDefaultRoutePlanner(java.net.ProxySelector.getDefault());
+        CloseableHttpClient httpClient = HttpClients.custom()
+            .setRoutePlanner(routePlanner)
+            .build();
+        HttpComponentsClientHttpRequestFactory factory =
+            new HttpComponentsClientHttpRequestFactory(httpClient);
+        factory.setConnectTimeout(15_000);
+        factory.setReadTimeout(20_000);
+        return new RestTemplate(factory);
+        }
 
     @Override
     public Page<Article> getArticles(Integer pageNum, Integer pageSize,
@@ -85,9 +111,8 @@ public class ArticleServiceImpl implements ArticleService {
             try {
                 String url = String.format("%s/top-headlines?category=%s&language=en&pageSize=10&apiKey=%s",
                         NEWS_API_BASE_URL, category, newsApiKey);
-                var responseEntity = restTemplate.getForEntity(java.net.URI.create(url), Object.class);
-                Object bodyObj = responseEntity.getBody();
-                String response = bodyObj == null ? "" : bodyObj.toString();
+                var responseEntity = restTemplate.getForEntity(java.net.URI.create(url), String.class);
+                String response = responseEntity.getBody();
                 if (!StringUtils.hasText(response)) {
                     result.setFailed(result.getFailed() + 1);
                     continue;
@@ -137,16 +162,14 @@ public class ArticleServiceImpl implements ArticleService {
                 return SaveOutcome.FAILED;
             }
             // 检查是否已存在
-            Long count = articleMapper.selectCount(
-                    new LambdaQueryWrapper<Article>().eq(Article::getUrl, url));
-            if (count > 0) {
+            Article existed = articleMapper.selectOne(
+                    new LambdaQueryWrapper<Article>().eq(Article::getUrl, url).last("limit 1"));
+            if (existed != null) {
+                backfillExistingArticleIfNeeded(existed, node, url);
                 return SaveOutcome.DUPLICATED;
             }
 
-            String content = node.path("content").asText();
-            if (!StringUtils.hasText(content) || content.length() < 80) {
-                content = node.path("description").asText();
-            }
+            String content = resolveArticleContent(node, url);
             if (!StringUtils.hasText(content) || content.length() < 30) {
                 return SaveOutcome.SKIPPED_NO_CONTENT;
             }
@@ -175,6 +198,112 @@ public class ArticleServiceImpl implements ArticleService {
             log.error("Failed to save article", e);
             return SaveOutcome.FAILED;
         }
+    }
+
+    private String resolveArticleContent(JsonNode node, String url) {
+        String newsApiContent = node.path("content").asText();
+        String description = node.path("description").asText();
+
+        boolean shouldFetchOriginal = !StringUtils.hasText(newsApiContent)
+                || newsApiContent.length() < MIN_ARTICLE_CONTENT_LENGTH
+                || isLikelyTruncatedByNewsApi(newsApiContent);
+
+        if (shouldFetchOriginal && StringUtils.hasText(url)) {
+            String fullContent = fetchFullContentFromUrl(url);
+            if (StringUtils.hasText(fullContent) && fullContent.length() >= MIN_ARTICLE_CONTENT_LENGTH) {
+                return fullContent;
+            }
+        }
+
+        if (StringUtils.hasText(newsApiContent) && newsApiContent.length() >= 80) {
+            return newsApiContent;
+        }
+        return description;
+    }
+
+    private void backfillExistingArticleIfNeeded(Article existed, JsonNode node, String url) {
+        if (existed == null) {
+            return;
+        }
+        String current = existed.getContent();
+        if (!isContentIncomplete(current)) {
+            return;
+        }
+        String resolved = resolveArticleContent(node, url);
+        if (!StringUtils.hasText(resolved) || resolved.length() <= currentLength(current)) {
+            return;
+        }
+        existed.setContent(resolved);
+        articleMapper.updateById(existed);
+    }
+
+    private boolean isContentIncomplete(String content) {
+        return !StringUtils.hasText(content)
+                || content.length() < MIN_ARTICLE_CONTENT_LENGTH
+                || isLikelyTruncatedByNewsApi(content);
+    }
+
+    private int currentLength(String content) {
+        return content == null ? 0 : content.length();
+    }
+
+    private boolean isLikelyTruncatedByNewsApi(String content) {
+        if (!StringUtils.hasText(content)) {
+            return false;
+        }
+        return content.contains("[+") && content.contains("chars]");
+    }
+
+    private String fetchFullContentFromUrl(String url) {
+        try {
+            Document doc = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .timeout(15_000)
+                    .get();
+
+            List<String> candidates = new ArrayList<>();
+            Elements articleNodes = doc.select("article, main article, [itemprop=articleBody], .article-content, .post-content, .entry-content");
+            for (Element node : articleNodes) {
+                String text = extractReadableText(node);
+                if (StringUtils.hasText(text)) {
+                    candidates.add(text);
+                }
+            }
+
+            String mainText = extractReadableText(doc.body());
+            if (StringUtils.hasText(mainText)) {
+                candidates.add(mainText);
+            }
+
+            return candidates.stream()
+                    .filter(StringUtils::hasText)
+                    .max((a, b) -> Integer.compare(a.length(), b.length()))
+                    .orElse("");
+        } catch (Exception e) {
+            log.debug("Failed to fetch full content from url: {}", url, e);
+            return "";
+        }
+    }
+
+    private String extractReadableText(Element root) {
+        if (root == null) {
+            return "";
+        }
+        Elements paragraphs = root.select("p");
+        StringBuilder sb = new StringBuilder();
+        for (Element p : paragraphs) {
+            String line = p.text();
+            if (StringUtils.hasText(line) && line.length() >= 40) {
+                if (sb.length() > 0) {
+                    sb.append("\n");
+                }
+                sb.append(line);
+            }
+        }
+        if (sb.length() > 0) {
+            return sb.toString();
+        }
+        return root.text();
     }
 
     private LocalDateTime parsePublishedAt(String publishedAt) {

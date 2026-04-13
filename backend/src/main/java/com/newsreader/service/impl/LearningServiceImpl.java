@@ -2,7 +2,9 @@ package com.newsreader.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.newsreader.entity.LearningRecord;
+import com.newsreader.entity.Article;
 import com.newsreader.entity.UserVocabulary;
+import com.newsreader.mapper.ArticleMapper;
 import com.newsreader.mapper.LearningRecordMapper;
 import com.newsreader.mapper.UserVocabularyMapper;
 import com.newsreader.service.AIService;
@@ -19,13 +21,16 @@ public class LearningServiceImpl implements LearningService {
 
     private final LearningRecordMapper recordMapper;
     private final UserVocabularyMapper vocabularyMapper;
+    private final ArticleMapper articleMapper;
     private final AIService aiService;
 
     public LearningServiceImpl(LearningRecordMapper recordMapper,
                                UserVocabularyMapper vocabularyMapper,
+                               ArticleMapper articleMapper,
                                AIService aiService) {
         this.recordMapper = recordMapper;
         this.vocabularyMapper = vocabularyMapper;
+        this.articleMapper = articleMapper;
         this.aiService = aiService;
     }
 
@@ -73,34 +78,70 @@ public class LearningServiceImpl implements LearningService {
 
     @Override
     public Map<String, String> lookupWord(String word, String context, Long userId) {
-        Map<String, String> result = aiService.lookupWord(word, context);
+        return lookupText(word, context, "WORD", userId);
+    }
+
+    @Override
+    public Map<String, String> lookupText(String text, String context, String type, Long userId) {
+        String normalizedType = "SENTENCE".equalsIgnoreCase(type) ? "SENTENCE" : "WORD";
+        String cleaned = text == null ? "" : text.trim();
+        if (cleaned.isEmpty()) {
+            return Map.of("definition", "", "chinese", "", "example", "");
+        }
+        String normalizedText = "WORD".equals(normalizedType) ? cleaned.toLowerCase() : cleaned;
+
+        Map<String, String> result = aiService.lookupText(cleaned, context, normalizedType.toLowerCase());
 
         // 保存到用户词汇表
         Long exists = vocabularyMapper.selectCount(
                 new LambdaQueryWrapper<UserVocabulary>()
                         .eq(UserVocabulary::getUserId, userId)
-                        .eq(UserVocabulary::getWord, word.toLowerCase()));
+                    .eq(UserVocabulary::getWord, normalizedText)
+                        .eq(UserVocabulary::getEntryType, normalizedType));
 
         if (exists == 0) {
             UserVocabulary vocab = new UserVocabulary();
             vocab.setUserId(userId);
-            vocab.setWord(word.toLowerCase());
+            vocab.setWord(normalizedText);
+            vocab.setEntryType(normalizedType);
             vocab.setDefinition(result.get("definition"));
+            vocab.setChinese(result.getOrDefault("chinese", ""));
             vocab.setExample(result.get("example"));
+            vocab.setContextText(context);
             vocab.setMasteryLevel(0);
             vocab.setReviewCount(0);
-            vocab.setNextReviewAt(LocalDateTime.now().plusDays(1));
+            vocab.setNextReviewAt(LocalDateTime.now().plusDays("SENTENCE".equals(normalizedType) ? 2 : 1));
             vocabularyMapper.insert(vocab);
         } else {
             // 记录查询行为
             LearningRecord record = new LearningRecord();
             record.setUserId(userId);
             record.setActionType("WORD_LOOKUP");
-            record.setNote(word);
+            record.setNote(cleaned);
             recordMapper.insert(record);
         }
 
         return result;
+    }
+
+    @Override
+    public String chatWithArticle(Long articleId, String question, List<Map<String, String>> history, Long userId) {
+        if (articleId == null || question == null || question.trim().isEmpty()) {
+            return "请输入问题后再发送。";
+        }
+        Article article = articleMapper.selectById(articleId);
+        if (article == null) {
+            return "未找到对应文章，请返回新闻列表后重试。";
+        }
+
+        LearningRecord record = new LearningRecord();
+        record.setUserId(userId);
+        record.setArticleId(articleId);
+        record.setActionType("ARTICLE_CHAT");
+        record.setNote(question.length() > 500 ? question.substring(0, 500) : question);
+        recordMapper.insert(record);
+
+        return aiService.chatAboutArticle(article.getContent(), question, history);
     }
 
     @Override

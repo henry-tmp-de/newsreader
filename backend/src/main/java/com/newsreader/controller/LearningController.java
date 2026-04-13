@@ -44,6 +44,28 @@ public class LearningController {
         return Result.success(learningService.lookupWord(word, context, userId));
     }
 
+    @PostMapping("/text-lookup")
+    public Result<Map<String, String>> lookupText(@RequestBody Map<String, String> body,
+                                                   @AuthenticationPrincipal Long userId) {
+        String text = body.getOrDefault("text", "");
+        String context = body.getOrDefault("context", "");
+        String type = body.getOrDefault("type", "word");
+        return Result.success(learningService.lookupText(text, context, type, userId));
+    }
+
+    @PostMapping("/article-chat")
+    @SuppressWarnings("unchecked")
+    public Result<Map<String, String>> chatWithArticle(@RequestBody Map<String, Object> body,
+                                                        @AuthenticationPrincipal Long userId) {
+        Long articleId = body.get("articleId") != null ?
+                Long.parseLong(body.get("articleId").toString()) : null;
+        String question = body.getOrDefault("question", "").toString();
+        List<Map<String, String>> history = body.get("history") == null ?
+                List.of() : (List<Map<String, String>>) body.get("history");
+        String answer = learningService.chatWithArticle(articleId, question, history, userId);
+        return Result.success(Map.of("answer", answer));
+    }
+
     @GetMapping("/vocabulary")
     public Result<List<UserVocabulary>> getVocabulary(@AuthenticationPrincipal Long userId) {
         return Result.success(learningService.getVocabularyList(userId));

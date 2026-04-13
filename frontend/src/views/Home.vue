@@ -115,7 +115,7 @@
       :total="total"
       layout="total, prev, pager, next"
       class="pagination"
-      @current-change="loadArticles"
+      @current-change="handlePageChange"
     />
 
     <el-dialog v-model="apiKeyDialogVisible" title="配置 NewsAPI 与 DeepSeek Key" width="560px">
@@ -190,6 +190,11 @@ async function loadArticles(reset = false) {
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange(page) {
+  pageNum.value = page
+  loadArticles(false)
 }
 
 async function fetchNews() {

@@ -15,9 +15,17 @@ public class UserVocabulary {
 
     private String word;
 
+    /** WORD / SENTENCE */
+    private String entryType;
+
     private String definition;
 
+    private String chinese;
+
     private String example;
+
+    /** 选中文本所在上下文 */
+    private String contextText;
 
     /** 掌握程度 0-5 */
     private Integer masteryLevel;

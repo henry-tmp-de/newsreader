@@ -98,11 +98,17 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public Map<String, String> lookupWord(String word, String context) {
+        return lookupText(word, context, "word");
+    }
+
+    @Override
+    public Map<String, String> lookupText(String text, String context, String type) {
         String prompt = String.format(
-                "The word \"%s\" appears in this context: \"%s\"\n" +
-                "Provide: 1) definition in English 2) Chinese translation 3) example sentence. " +
-                "Format as JSON: {\"definition\":\"...\",\"chinese\":\"...\",\"example\":\"...\"}", word, context);
-        String result = chat("You are an English vocabulary assistant.", prompt);
+                "Text: \"%s\"\nContext: \"%s\"\nType: %s\n" +
+                "Return JSON with keys definition, chinese, example. " +
+                "If type is sentence, definition should explain the sentence meaning in English and example can be empty.",
+                text, context, type == null ? "word" : type);
+        String result = chat("You are an English learning assistant.", prompt);
         try {
             // clean markdown code blocks if present
             result = result.replaceAll("```json|```", "").trim();
@@ -154,5 +160,27 @@ public class AIServiceImpl implements AIService {
                 "Provide a brief explanation (2-3 sentences) of why the correct answer is right, in English.",
                 question, userAnswer, correctAnswer, context);
         return chat("You are a helpful English teacher.", prompt);
+    }
+
+    @Override
+    public String chatAboutArticle(String articleContent, String question, List<Map<String, String>> history) {
+        String snippet = articleContent == null ? "" : articleContent.substring(0, Math.min(3500, articleContent.length()));
+        StringBuilder historyText = new StringBuilder();
+        if (history != null) {
+            for (Map<String, String> h : history) {
+                String role = h.getOrDefault("role", "user");
+                String content = h.getOrDefault("content", "");
+                if (StringUtils.hasText(content)) {
+                    historyText.append(role).append(": ").append(content).append("\n");
+                }
+            }
+        }
+        String prompt = "Article content:\n" + snippet + "\n\nConversation history:\n" + historyText +
+                "\nUser question:\n" + question;
+        String answer = chat("You are an article reading copilot. Answer only based on the article. If unclear, say what is missing.", prompt);
+        if (!StringUtils.hasText(answer)) {
+            return "当前 AI 服务不可用，请稍后重试。";
+        }
+        return answer;
     }
 }

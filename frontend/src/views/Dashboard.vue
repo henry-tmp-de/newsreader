@@ -1,6 +1,10 @@
 <template>
   <div class="dashboard" v-loading="loading">
-    <h2 class="page-title">学习看板</h2>
+    <section class="hero paper">
+      <p class="kicker">LEARNING BRIEF</p>
+      <h2 class="page-title">学习看板</h2>
+      <p class="desc">把阅读行为、练习表现和词汇进度放在同一张仪表盘里，方便你快速复盘。</p>
+    </section>
 
     <!-- 统计卡片 -->
     <el-row :gutter="20" class="stat-row">
@@ -118,17 +122,33 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard { display: flex; flex-direction: column; gap: 20px; }
-.page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.paper {
+  border: 1px solid rgba(24, 34, 45, 0.1);
+  border-radius: 24px;
+  background: rgba(250, 246, 237, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px rgba(20, 27, 34, 0.08);
+  padding: 18px;
+}
+.kicker { font-size: 12px; letter-spacing: .2em; color: #a33a2b; margin-bottom: 8px; }
+.page-title { font-size: 28px; font-weight: 700; margin-bottom: 2px; color: #18222d; }
+.desc { color: #64707d; }
 .stat-row { margin-bottom: 0; }
 .stat-card {
-  border-radius: 12px;
+  border-radius: 18px;
   position: relative;
   overflow: hidden;
   min-height: 100px;
+  border: 1px solid rgba(24, 34, 45, 0.08);
+  background: rgba(255, 253, 247, 0.95);
 }
 .stat-icon { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); opacity: 0.15; }
 .unit { font-size: 14px; color: #909399; }
-.review-card, .tips-card { border-radius: 12px; }
+.review-card, .tips-card {
+  border-radius: 18px;
+  border: 1px solid rgba(24, 34, 45, 0.08);
+  background: rgba(255, 253, 247, 0.95);
+}
 .card-header { display: flex; align-items: center; justify-content: space-between; }
 .word-chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .word-chip { cursor: pointer; font-size: 14px; padding: 6px 12px; }

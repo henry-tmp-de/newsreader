@@ -71,14 +71,17 @@ CREATE TABLE IF NOT EXISTS learning_records (
 CREATE TABLE IF NOT EXISTS user_vocabulary (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id BIGINT NOT NULL COMMENT '用户ID',
-    word VARCHAR(100) NOT NULL COMMENT '单词',
+    word VARCHAR(500) NOT NULL COMMENT '单词或句子',
+    entry_type VARCHAR(20) DEFAULT 'WORD' COMMENT '类型: WORD/SENTENCE',
     definition TEXT COMMENT '释义（英文）',
+    chinese TEXT COMMENT '中文翻译',
     example TEXT COMMENT '例句',
+    context_text TEXT COMMENT '上下文',
     mastery_level INT DEFAULT 0 COMMENT '掌握程度 0-5',
     review_count INT DEFAULT 0 COMMENT '复习次数',
     next_review_at DATETIME COMMENT '下次复习时间',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_user_word (user_id, word),
+    UNIQUE KEY uk_user_word_type (user_id, word, entry_type),
     INDEX idx_review (user_id, next_review_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户词汇表';
 

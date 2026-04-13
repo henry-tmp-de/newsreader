@@ -43,7 +43,7 @@ jwt:
 
 # NewsAPI configuration (get free key at https://newsapi.org)
 news-api:
-  key: your_newsapi_key
+  key: 02ebd32c00b84f94b81ce01369449c89
   base-url: https://newsapi.org/v2
 
 # DeepSeek configuration

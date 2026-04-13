@@ -3,10 +3,13 @@
     <div
       class="word-popover"
       :style="{ left: safeX + 'px', top: safeY + 'px' }"
-      v-if="wordInfo || loading"
+      v-if="resultInfo || loading"
     >
       <div class="popover-header">
-        <span class="word">{{ word }}</span>
+        <div class="header-main">
+          <span class="word">{{ text }}</span>
+          <el-tag size="small" :type="mode === 'sentence' ? 'warning' : 'info'">{{ modeLabel }}</el-tag>
+        </div>
         <el-button :icon="Close" circle size="small" text @click="$emit('close')" />
       </div>
 
@@ -14,22 +17,22 @@
         <el-skeleton :rows="2" animated />
       </div>
 
-      <template v-else-if="wordInfo">
+      <template v-else-if="resultInfo">
         <div class="definition">
           <div class="label">释义</div>
-          <div class="value">{{ wordInfo.definition }}</div>
+          <div class="value">{{ resultInfo.definition }}</div>
         </div>
-        <div class="translation" v-if="wordInfo.chinese">
+        <div class="translation" v-if="resultInfo.chinese">
           <div class="label">中文</div>
-          <div class="value zh">{{ wordInfo.chinese }}</div>
+          <div class="value zh">{{ resultInfo.chinese }}</div>
         </div>
-        <div class="example" v-if="wordInfo.example">
-          <div class="label">例句</div>
-          <div class="value italic">{{ wordInfo.example }}</div>
+        <div class="example" v-if="resultInfo.example">
+          <div class="label">示例</div>
+          <div class="value italic">{{ resultInfo.example }}</div>
         </div>
         <div class="saved-tip">
           <el-icon color="#67C23A"><CircleCheck /></el-icon>
-          <span>已加入词汇本</span>
+          <span>已加入词汇记录</span>
         </div>
       </template>
     </div>
@@ -37,31 +40,33 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
-import { lookupWordApi } from '@/api/learning'
+import { computed, ref, watch } from 'vue'
+import { lookupTextApi } from '@/api/learning'
 import { Close, CircleCheck } from '@element-plus/icons-vue'
 
 const props = defineProps({
-  word: { type: String, required: true },
+  text: { type: String, required: true },
+  mode: { type: String, default: 'word' },
   context: { type: String, default: '' },
   position: { type: Object, default: () => ({ x: 0, y: 0 }) },
 })
 defineEmits(['close'])
 
-const wordInfo = ref(null)
+const resultInfo = ref(null)
 const loading = ref(false)
 const safeX = ref(0)
 const safeY = ref(0)
+const modeLabel = computed(() => (props.mode === 'sentence' ? '句子' : '词汇'))
 
-watch(() => props.word, async (w) => {
+watch(() => props.text, async (w) => {
   if (!w) return
-  wordInfo.value = null
+  resultInfo.value = null
   loading.value = true
   // 计算安全位置（避免超出屏幕）
   safeX.value = Math.min(props.position.x, window.innerWidth - 340)
   safeY.value = props.position.y + 16
   try {
-    wordInfo.value = await lookupWordApi({ word: w, context: props.context })
+    resultInfo.value = await lookupTextApi({ text: w, context: props.context, type: props.mode })
   } finally {
     loading.value = false
   }
@@ -85,7 +90,8 @@ watch(() => props.word, async (w) => {
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.word { font-size: 20px; font-weight: 700; color: #409EFF; }
+.header-main { display: flex; align-items: center; gap: 8px; max-width: 270px; }
+.word { font-size: 16px; font-weight: 700; color: #409EFF; overflow-wrap: anywhere; }
 .label { font-size: 11px; color: #909399; text-transform: uppercase; margin-bottom: 2px; }
 .value { font-size: 14px; color: #303133; line-height: 1.6; }
 .zh { font-size: 16px; color: #606266; font-weight: 500; }

@@ -1,7 +1,8 @@
 <template>
   <div class="exercise-page">
-    <el-card shadow="never" class="header-card">
+    <el-card shadow="never" class="header-card paper">
       <el-button :icon="ArrowLeft" text @click="router.back()">返回文章</el-button>
+      <p class="kicker">PRACTICE MODE</p>
       <h2 class="title">练习测验</h2>
       <p class="subtitle">基于所读文章，AI 为你生成个性化练习题</p>
     </el-card>
@@ -12,7 +13,7 @@
     </div>
 
     <!-- 无题目时生成 -->
-    <el-card v-else-if="exercises.length === 0" shadow="never" class="empty-card">
+    <el-card v-else-if="exercises.length === 0" shadow="never" class="empty-card paper">
       <el-empty description="暂无练习题">
         <el-button type="primary" :loading="generating" @click="generateExercises">
           <el-icon><Magic /></el-icon>
@@ -33,7 +34,7 @@
         v-for="(ex, index) in exercises"
         :key="ex.id"
         shadow="never"
-        class="exercise-card"
+        class="exercise-card paper"
         :class="{ answered: results[ex.id] !== undefined }"
       >
         <div class="question-header">
@@ -80,7 +81,7 @@
       </el-card>
 
       <!-- 重新生成 -->
-      <el-card shadow="never" class="regen-card">
+      <el-card shadow="never" class="regen-card paper">
         <el-button :loading="generating" @click="generateExercises">
           <el-icon><Refresh /></el-icon>
           重新生成练习题
@@ -172,11 +173,19 @@ onMounted(loadExercises)
 
 <style scoped>
 .exercise-page { display: flex; flex-direction: column; gap: 16px; max-width: 800px; margin: 0 auto; }
-.header-card { border-radius: 12px; }
+.paper {
+  border: 1px solid rgba(24, 34, 45, 0.1);
+  border-radius: 20px;
+  background: rgba(250, 246, 237, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px rgba(20, 27, 34, 0.08);
+}
+.kicker { font-size: 12px; letter-spacing: .2em; color: #a33a2b; margin-top: 8px; }
+.header-card { border-radius: 20px; }
 .title { font-size: 22px; font-weight: 700; margin: 8px 0 4px; }
 .subtitle { color: #909399; font-size: 14px; }
 .progress { margin: 4px 0; }
-.exercise-card { border-radius: 12px; transition: border-color .3s; }
+.exercise-card { border-radius: 20px; transition: border-color .3s; }
 .exercise-card.answered { border-left: 4px solid #67c23a; }
 .question-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .q-num { color: #909399; font-size: 13px; }

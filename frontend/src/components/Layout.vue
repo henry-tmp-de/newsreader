@@ -1,5 +1,5 @@
 <template>
-  <el-container style="height: 100vh">
+  <el-container class="layout-root">
     <!-- 侧边栏 -->
     <el-aside width="220px" class="sidebar">
       <div class="logo">
@@ -9,8 +9,8 @@
       <el-menu
         :default-active="route.path"
         router
-        background-color="#001529"
-        text-color="#ffffffa0"
+        background-color="transparent"
+        text-color="#d8dee6"
         active-text-color="#ffffff"
       >
         <el-menu-item index="/">
@@ -30,7 +30,7 @@
 
     <el-container>
       <!-- 顶栏 -->
-      <el-header class="header">
+      <el-header class="header paper">
         <div class="header-left">
           <span class="page-title">{{ pageTitle }}</span>
         </div>
@@ -98,9 +98,10 @@ function handleCommand(cmd) {
 
 <style scoped>
 .sidebar {
-  background: #001529;
+  background: linear-gradient(180deg, #1a232d, #131b24);
   display: flex;
   flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 .logo {
   display: flex;
@@ -110,20 +111,33 @@ function handleCommand(cmd) {
   color: #fff;
   font-size: 18px;
   font-weight: 700;
-  border-bottom: 1px solid #ffffff15;
+  border-bottom: 1px solid #ffffff20;
 }
 .el-menu {
   border-right: none;
   flex: 1;
+  padding-top: 12px;
+}
+.el-menu-item {
+  margin: 4px 10px;
+  border-radius: 10px;
+}
+.el-menu-item.is-active {
+  background: rgba(255, 255, 255, 0.16) !important;
 }
 .header {
-  background: #fff;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e4e7ed;
   padding: 0 24px;
-  box-shadow: 0 1px 4px rgba(0,21,41,0.08);
+  margin: 14px 16px 0;
+}
+.paper {
+  border: 1px solid rgba(24, 34, 45, 0.1);
+  border-radius: 18px;
+  background: rgba(250, 246, 237, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 16px 40px rgba(20, 27, 34, 0.06);
 }
 .page-title {
   font-size: 16px;
@@ -148,8 +162,10 @@ function handleCommand(cmd) {
   color: #606266;
 }
 .main-content {
-  background: #f5f7fa;
-  padding: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(163, 58, 43, 0.12), transparent 26%),
+    linear-gradient(180deg, #f7f2e7, #f0e7d8);
+  padding: 20px;
   overflow-y: auto;
 }
 </style>
