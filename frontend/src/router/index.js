@@ -40,6 +40,11 @@ const routes = [
         component: () => import('@/views/Dashboard.vue'),
       },
       {
+        path: 'progress',
+        name: 'Progress',
+        component: () => import('@/views/Progress.vue'),
+      },
+      {
         path: 'vocabulary',
         name: 'Vocabulary',
         component: () => import('@/views/Vocabulary.vue'),

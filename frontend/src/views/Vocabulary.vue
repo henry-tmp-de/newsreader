@@ -3,7 +3,7 @@
     <section class="hero paper page-header">
       <div>
         <p class="kicker">VOCABULARY NOTEBOOK</p>
-        <h2>我的词汇与句子</h2>
+        <h2>我的词句</h2>
       </div>
       <el-input
         v-model="search"

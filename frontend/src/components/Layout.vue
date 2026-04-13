@@ -21,9 +21,13 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>学习看板</span>
         </el-menu-item>
+        <el-menu-item index="/progress">
+          <el-icon><TrendCharts /></el-icon>
+          <span>学习进度</span>
+        </el-menu-item>
         <el-menu-item index="/vocabulary">
           <el-icon><Collection /></el-icon>
-          <span>我的词汇</span>
+          <span>我的词句</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -57,7 +61,16 @@
 
       <!-- 主内容 -->
       <el-main class="main-content">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <Suspense>
+            <component :is="Component" />
+            <template #fallback>
+              <div class="route-fallback paper-lite">
+                <el-skeleton :rows="10" animated />
+              </div>
+            </template>
+          </Suspense>
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
@@ -75,7 +88,8 @@ const userStore = useUserStore()
 const pageTitleMap = {
   '/': '新闻列表',
   '/dashboard': '学习看板',
-  '/vocabulary': '我的词汇',
+  '/progress': '学习进度',
+  '/vocabulary': '我的词句',
 }
 const pageTitle = computed(() => {
   if (route.name === 'Article') return '文章阅读'
@@ -98,10 +112,12 @@ function handleCommand(cmd) {
 
 <style scoped>
 .sidebar {
-  background: linear-gradient(180deg, #1a232d, #131b24);
+  background:
+    radial-gradient(circle at top left, rgba(222, 143, 85, 0.22), transparent 35%),
+    linear-gradient(180deg, #3a2a24, #2a201c);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 .logo {
   display: flex;
@@ -167,5 +183,14 @@ function handleCommand(cmd) {
     linear-gradient(180deg, #f7f2e7, #f0e7d8);
   padding: 20px;
   overflow-y: auto;
+}
+.paper-lite {
+  border: 1px solid rgba(24, 34, 45, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 253, 247, 0.82);
+  padding: 18px;
+}
+.route-fallback {
+  min-height: calc(100vh - 150px);
 }
 </style>

@@ -1,5 +1,9 @@
 <template>
-  <div class="article-page" v-loading="loading">
+  <div
+    class="article-page"
+    v-loading="loading"
+    element-loading-background="rgba(247, 242, 231, 0.72)"
+  >
     <template v-if="article">
       <div class="layout-grid">
         <main class="article-main">
