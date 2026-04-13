@@ -2,6 +2,7 @@ package com.newsreader.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.newsreader.common.Result;
+import com.newsreader.dto.NewsFetchResultDTO;
 import com.newsreader.entity.Article;
 import com.newsreader.service.ArticleService;
 import org.springframework.web.bind.annotation.*;
@@ -34,8 +35,8 @@ public class ArticleController {
     }
 
     @PostMapping("/fetch")
-    public Result<?> fetchNews() {
-        articleService.fetchAndSaveFromNewsAPI();
-        return Result.success("新闻拉取任务已触发");
+    public Result<NewsFetchResultDTO> fetchNews() {
+        NewsFetchResultDTO result = articleService.fetchAndSaveFromNewsAPI();
+        return Result.success(result);
     }
 }

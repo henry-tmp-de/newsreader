@@ -81,3 +81,12 @@ CREATE TABLE IF NOT EXISTS user_vocabulary (
     UNIQUE KEY uk_user_word (user_id, word),
     INDEX idx_review (user_id, next_review_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户词汇表';
+
+-- 系统配置表（用于保存用户手动填写的API Key）
+CREATE TABLE IF NOT EXISTS system_config (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    config_key VARCHAR(100) NOT NULL UNIQUE COMMENT '配置键',
+    config_value VARCHAR(1000) NOT NULL COMMENT '配置值',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_config_key (config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统配置表';

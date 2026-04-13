@@ -14,9 +14,22 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
   padding: 0;
   box-sizing: border-box;
 }
+
+:root {
+  color-scheme: light;
+}
+
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background-color: #f5f7fa;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(163, 58, 43, 0.1), transparent 24%),
+    radial-gradient(circle at top right, rgba(24, 34, 45, 0.08), transparent 26%),
+    linear-gradient(180deg, #f6f0e6, #edf2f6 46%, #f7f3ea 100%);
   color: #303133;
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
 }
 </style>

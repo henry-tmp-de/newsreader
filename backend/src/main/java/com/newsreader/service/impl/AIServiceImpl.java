@@ -3,12 +3,14 @@ package com.newsreader.service.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.newsreader.service.AIService;
+import com.newsreader.service.SystemConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.util.StringUtils;
 
 import java.util.*;
 
@@ -17,26 +19,33 @@ public class AIServiceImpl implements AIService {
 
     private static final Logger log = LoggerFactory.getLogger(AIServiceImpl.class);
 
-    @Value("${openai.api-key}")
-    private String apiKey;
-
-    @Value("${openai.base-url}")
+    @Value("${deepseek.base-url}")
     private String baseUrl;
 
-    @Value("${openai.model}")
+    @Value("${deepseek.model}")
     private String model;
 
-    @Value("${openai.max-tokens}")
+    @Value("${deepseek.max-tokens}")
     private Integer maxTokens;
 
+    private final SystemConfigService systemConfigService;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    public AIServiceImpl(SystemConfigService systemConfigService) {
+        this.systemConfigService = systemConfigService;
+    }
+
     private String chat(String systemPrompt, String userContent) {
         try {
+            String resolvedApiKey = systemConfigService.getDeepseekApiKey();
+            if (!StringUtils.hasText(resolvedApiKey) || resolvedApiKey.contains("your_deepseek_api_key")) {
+                return "";
+            }
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
+            headers.setBearerAuth(resolvedApiKey);
 
             Map<String, Object> body = new HashMap<>();
             body.put("model", model);
@@ -53,7 +62,7 @@ public class AIServiceImpl implements AIService {
             JsonNode root = objectMapper.readTree(response.getBody());
             return root.path("choices").get(0).path("message").path("content").asText();
         } catch (Exception e) {
-            log.error("OpenAI API call failed", e);
+            log.error("DeepSeek API call failed", e);
             return "";
         }
     }

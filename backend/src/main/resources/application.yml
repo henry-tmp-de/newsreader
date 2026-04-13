@@ -46,11 +46,11 @@ news-api:
   key: your_newsapi_key
   base-url: https://newsapi.org/v2
 
-# OpenAI configuration
-openai:
-  api-key: your_openai_api_key
-  base-url: https://api.openai.com/v1
-  model: gpt-4o-mini
+# DeepSeek configuration
+deepseek:
+  api-key: your_deepseek_api_key
+  base-url: https://api.deepseek.com/v1
+  model: deepseek-chat
   max-tokens: 2000
 
 logging:
