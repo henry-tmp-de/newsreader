@@ -14,7 +14,7 @@
         placeholder="搜索词汇或句子..."
         :prefix-icon="Search"
         clearable
-        style="width: 240px"
+        class="search-input"
       />
     </section>
 
@@ -127,5 +127,22 @@ onMounted(async () => {
 .kicker { font-size: 12px; letter-spacing: .2em; color: #a33a2b; margin-bottom: 8px; }
 .page-header h2 { font-size: 28px; font-weight: 700; color: #18222d; }
 .table-wrap { padding: 14px; }
+.search-input { width: 240px; }
 .word-text { font-weight: 600; color: #a33a2b; font-size: 15px; }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+}
 </style>

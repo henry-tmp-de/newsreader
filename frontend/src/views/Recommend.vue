@@ -321,8 +321,24 @@ h4 {
   color: #7e8894;
 }
 @media (max-width: 768px) {
+  .profile-head,
+  .list-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-panel,
+  .recommend-list {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
   .interest-editor {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-actions {
+    flex-wrap: wrap;
   }
 }
 </style>

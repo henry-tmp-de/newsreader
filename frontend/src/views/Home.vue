@@ -128,7 +128,7 @@
       @current-change="handlePageChange"
     />
 
-    <el-dialog v-model="apiKeyDialogVisible" title="配置 NewsAPI 与 DeepSeek Key" width="560px">
+    <el-dialog v-model="apiKeyDialogVisible" title="配置 NewsAPI 与 DeepSeek Key" width="min(560px, 92vw)">
       <el-form label-position="top" :model="apiKeysForm">
         <el-form-item label="NewsAPI Key（必填，用于拉取新闻）">
           <el-input v-model="apiKeysForm.newsApiKey" placeholder="请输入 NewsAPI Key" clearable show-password />

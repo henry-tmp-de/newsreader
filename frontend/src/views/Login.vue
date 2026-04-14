@@ -82,17 +82,23 @@ async function handleLogin() {
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background:
+    radial-gradient(circle at top left, rgba(163, 58, 43, 0.2), transparent 30%),
+    radial-gradient(circle at top right, rgba(24, 34, 45, 0.16), transparent 32%),
+    linear-gradient(180deg, #f5efe4, #ede3d2);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
 }
 .login-box {
-  background: #fff;
-  border-radius: 16px;
+  background: rgba(255, 253, 247, 0.94);
+  border: 1px solid rgba(24, 34, 45, 0.1);
+  border-radius: 20px;
   padding: 40px 48px;
   width: 420px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  max-width: 100%;
+  box-shadow: 0 20px 60px rgba(20, 27, 34, 0.12);
 }
 .brand {
   text-align: center;
@@ -115,7 +121,28 @@ async function handleLogin() {
   font-size: 14px;
 }
 .footer-links a {
-  color: #409EFF;
+  color: #a33a2b;
   text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .login-page {
+    align-items: stretch;
+    padding: 14px;
+  }
+
+  .login-box {
+    width: 100%;
+    padding: 24px 18px;
+    border-radius: 16px;
+  }
+
+  .brand {
+    margin-bottom: 20px;
+  }
+
+  .brand h1 {
+    font-size: 24px;
+  }
 }
 </style>

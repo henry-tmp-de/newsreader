@@ -30,7 +30,12 @@
 
           <section class="paper content-card">
             <div class="selection-tip">支持划词或划句翻译，结果将记录在“我的词汇”中。</div>
-            <div class="article-content" @mouseup="handleTextSelection">
+            <div
+              ref="articleContentRef"
+              class="article-content"
+              @mouseup="handleTextSelection"
+              @touchend.passive="handleTextSelection"
+            >
               <p v-for="(para, i) in paragraphs" :key="i" class="paragraph">{{ para }}</p>
             </div>
 
@@ -108,6 +113,7 @@ const selectedText = ref('')
 const selectionMode = ref('word')
 const selectedContext = ref('')
 const popoverPos = ref({ x: 0, y: 0 })
+const articleContentRef = ref(null)
 
 const chatInput = ref('')
 const chatLoading = ref(false)
@@ -130,8 +136,25 @@ function formatDate(d) {
 }
 
 function handleTextSelection(e) {
+  const isTouch = e?.type?.startsWith('touch')
+  if (isTouch) {
+    // 移动端在 touchend 后选区信息可能延迟更新，稍后读取更稳定。
+    window.setTimeout(() => applySelection(e), 120)
+    return
+  }
+  applySelection(e)
+}
+
+function applySelection(e) {
   const selection = window.getSelection()
   const text = selection?.toString().trim() || ''
+  const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+
+  if (!isSelectionInsideArticle(range)) {
+    selectedText.value = ''
+    return
+  }
+
   if (!text || text.length > 220) {
     selectedText.value = ''
     return
@@ -148,7 +171,31 @@ function handleTextSelection(e) {
   selectedText.value = text
   selectionMode.value = isWord ? 'word' : 'sentence'
   selectedContext.value = selection.anchorNode?.parentElement?.innerText?.trim() || text
-  popoverPos.value = { x: e.clientX, y: e.clientY }
+  popoverPos.value = resolvePopoverPosition(e, range)
+}
+
+function isSelectionInsideArticle(range) {
+  if (!range || !articleContentRef.value) return false
+  const node = range.commonAncestorContainer
+  const target = node?.nodeType === Node.TEXT_NODE ? node.parentNode : node
+  return !!target && articleContentRef.value.contains(target)
+}
+
+function resolvePopoverPosition(e, range) {
+  if (e?.changedTouches?.[0]) {
+    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY }
+  }
+  if (typeof e?.clientX === 'number' && typeof e?.clientY === 'number') {
+    return { x: e.clientX, y: e.clientY }
+  }
+  const rect = range?.getBoundingClientRect?.()
+  if (rect) {
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.bottom,
+    }
+  }
+  return { x: window.innerWidth / 2, y: window.innerHeight / 2 }
 }
 
 async function sendChat() {
@@ -304,5 +351,26 @@ onMounted(async () => {
 @media (max-width: 1100px) {
   .layout-grid { grid-template-columns: 1fr; }
   .copilot-panel { position: static; max-height: none; }
+}
+
+@media (max-width: 768px) {
+  .paper {
+    border-radius: 16px;
+    padding: 14px;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .meta,
+  .actions {
+    flex-wrap: wrap;
+  }
+
+  .paragraph {
+    font-size: 16px;
+    line-height: 1.85;
+  }
 }
 </style>

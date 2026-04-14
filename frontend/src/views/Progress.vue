@@ -141,4 +141,19 @@ onMounted(async () => {
 @media (max-width: 980px) {
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+@media (max-width: 640px) {
+  .row {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .hero h2 {
+    font-size: 24px;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

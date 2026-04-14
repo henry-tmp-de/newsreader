@@ -12,6 +12,24 @@
       <el-skeleton :rows="6" animated />
     </div>
 
+    <el-card v-if="generating" shadow="never" class="paper generating-card">
+      <div class="generating-head">
+        <el-icon class="rotating"><Loading /></el-icon>
+        <div>
+          <div class="generating-title">AI 正在生成练习题</div>
+          <div class="generating-hint">{{ generationHint }}</div>
+        </div>
+      </div>
+      <el-progress :percentage="generationProgress" :stroke-width="16" striped striped-flow />
+      <div class="progress-meta">
+        <span>预计 10-25 秒，网络波动时可能更久</span>
+        <span>{{ generationProgress }}%</span>
+      </div>
+      <div class="dot-wave" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </el-card>
+
     <!-- 无题目时生成 -->
     <el-card v-else-if="exercises.length === 0" shadow="never" class="empty-card paper">
       <el-empty description="暂无练习题">
@@ -92,10 +110,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getExercisesApi, generateExercisesApi, submitAnswerApi } from '@/api/exercise'
-import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Loading, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -105,6 +123,17 @@ const answers = ref({})
 const results = ref({})
 const loading = ref(true)
 const generating = ref(false)
+const generationProgress = ref(0)
+const generationHint = ref('准备题目结构...')
+let generationTimer = null
+
+const generationStages = [
+  { p: 10, text: '准备题目结构...' },
+  { p: 28, text: '分析文章重点...' },
+  { p: 52, text: '生成题干与选项...' },
+  { p: 76, text: '校验答案与解析...' },
+  { p: 90, text: '整理最终结果...' },
+]
 
 const answeredCount = computed(() => Object.keys(results.value).length)
 const progressPercent = computed(() =>
@@ -143,17 +172,48 @@ async function loadExercises() {
 
 async function generateExercises() {
   generating.value = true
-  exercises.value = []
   answers.value = {}
   results.value = {}
+  startGenerationProgress()
   try {
-    exercises.value = await generateExercisesApi(route.params.articleId)
-    ElMessage.success('练习题生成成功')
+    const generated = await generateExercisesApi(route.params.articleId)
+    exercises.value = generated
+    finishGenerationProgress(true)
+    ElMessage.success(`练习题生成成功，共 ${generated.length} 题`)
   } catch (e) {
+    finishGenerationProgress(false)
     ElMessage.error('生成失败，请重试')
   } finally {
     generating.value = false
   }
+}
+
+function startGenerationProgress() {
+  generationProgress.value = 6
+  generationHint.value = generationStages[0].text
+  const startedAt = Date.now()
+  if (generationTimer) clearInterval(generationTimer)
+  generationTimer = setInterval(() => {
+    const elapsed = Date.now() - startedAt
+    const next = elapsed < 5000
+      ? generationProgress.value + 2
+      : elapsed < 12000
+        ? generationProgress.value + 1
+        : generationProgress.value + 0.4
+    generationProgress.value = Math.min(92, Math.round(next))
+
+    const stage = [...generationStages].reverse().find(s => generationProgress.value >= s.p) || generationStages[0]
+    generationHint.value = stage.text
+  }, 360)
+}
+
+function finishGenerationProgress(success) {
+  if (generationTimer) {
+    clearInterval(generationTimer)
+    generationTimer = null
+  }
+  generationProgress.value = success ? 100 : 0
+  generationHint.value = success ? '生成完成，正在加载题目...' : '生成中断，请重试'
 }
 
 async function submitAnswer(ex) {
@@ -169,6 +229,10 @@ async function submitAnswer(ex) {
 }
 
 onMounted(loadExercises)
+
+onUnmounted(() => {
+  if (generationTimer) clearInterval(generationTimer)
+})
 </script>
 
 <style scoped>
@@ -199,4 +263,76 @@ onMounted(loadExercises)
 .feedback-alert { margin-top: 16px; }
 .empty-card, .regen-card { text-align: center; padding: 20px; }
 .center-loading { padding: 20px 0; }
+.generating-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+.generating-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.generating-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2d3d;
+}
+.generating-hint {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #7a8694;
+}
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  color: #8a95a1;
+  font-size: 12px;
+}
+.rotating {
+  animation: rotating 1s linear infinite;
+  color: #a33a2b;
+}
+.dot-wave {
+  display: flex;
+  gap: 6px;
+}
+.dot-wave span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(163, 58, 43, 0.7);
+  animation: wave 1.1s infinite ease-in-out;
+}
+.dot-wave span:nth-child(2) { animation-delay: 0.14s; }
+.dot-wave span:nth-child(3) { animation-delay: 0.28s; }
+
+@keyframes rotating {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wave {
+  0%, 80%, 100% { transform: translateY(0); opacity: .45; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .exercise-page {
+    max-width: 100%;
+  }
+
+  .title {
+    font-size: 20px;
+  }
+
+  .question {
+    font-size: 15px;
+  }
+
+  .option {
+    padding: 8px 10px;
+  }
+}
 </style>

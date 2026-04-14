@@ -1,49 +1,34 @@
 <template>
   <el-container class="layout-root">
-    <!-- 侧边栏 -->
-    <el-aside width="220px" class="sidebar">
+    <el-aside v-if="!isMobile" width="220px" class="sidebar">
       <div class="logo">
         <el-icon size="28" color="#409EFF"><Reading /></el-icon>
         <span>NewsReader</span>
       </div>
       <el-menu
-        :default-active="route.path"
+        :default-active="activeMenuPath"
         router
         background-color="transparent"
         text-color="#d8dee6"
         active-text-color="#ffffff"
       >
-        <el-menu-item index="/">
-          <el-icon><House /></el-icon>
-          <span>新闻首页</span>
-        </el-menu-item>
-        <el-menu-item index="/dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>学习看板</span>
-        </el-menu-item>
-        <el-menu-item index="/news-manage">
-          <el-icon><Setting /></el-icon>
-          <span>新闻管理</span>
-        </el-menu-item>
-        <el-menu-item index="/recommend">
-          <el-icon><Opportunity /></el-icon>
-          <span>智能推荐</span>
-        </el-menu-item>
-        <el-menu-item index="/progress">
-          <el-icon><TrendCharts /></el-icon>
-          <span>学习进度</span>
-        </el-menu-item>
-        <el-menu-item index="/vocabulary">
-          <el-icon><Collection /></el-icon>
-          <span>我的词句</span>
+        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
 
     <el-container>
-      <!-- 顶栏 -->
       <el-header class="header paper">
         <div class="header-left">
+          <el-button
+            v-if="isMobile"
+            class="menu-btn"
+            text
+            :icon="Menu"
+            @click="mobileMenuVisible = true"
+          />
           <span class="page-title">{{ pageTitle }}</span>
         </div>
         <div class="header-right">
@@ -55,7 +40,7 @@
               <el-avatar size="small" :src="userStore.userInfo?.avatar">
                 {{ userStore.userInfo?.username?.[0]?.toUpperCase() }}
               </el-avatar>
-              <span class="username">{{ userStore.userInfo?.username }}</span>
+              <span v-if="!isMobile" class="username">{{ userStore.userInfo?.username }}</span>
               <el-icon><ArrowDown /></el-icon>
             </div>
             <template #dropdown>
@@ -67,8 +52,7 @@
         </div>
       </el-header>
 
-      <!-- 主内容 -->
-      <el-main class="main-content">
+      <el-main :class="['main-content', { 'with-bottom-nav': isMobile }]">
         <router-view v-slot="{ Component }">
           <Suspense>
             <component :is="Component" />
@@ -80,18 +64,82 @@
           </Suspense>
         </router-view>
       </el-main>
+
+      <nav v-if="isMobile" class="mobile-tabbar paper">
+        <button
+          v-for="item in menuItems"
+          :key="item.path"
+          type="button"
+          :class="['tab-item', { active: activeMenuPath === item.path }]"
+          @click="goTo(item.path)"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.mobileLabel || item.label }}</span>
+        </button>
+      </nav>
     </el-container>
+
+    <el-drawer
+      v-model="mobileMenuVisible"
+      direction="ltr"
+      size="76%"
+      class="mobile-drawer"
+      :with-header="false"
+    >
+      <div class="logo mobile-logo">
+        <el-icon size="28" color="#409EFF"><Reading /></el-icon>
+        <span>NewsReader</span>
+      </div>
+      <el-menu
+        :default-active="activeMenuPath"
+        background-color="transparent"
+        text-color="#d8dee6"
+        active-text-color="#ffffff"
+      >
+        <el-menu-item
+          v-for="item in menuItems"
+          :key="item.path"
+          :index="item.path"
+          @click="goTo(item.path)"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
+        </el-menu-item>
+      </el-menu>
+    </el-drawer>
   </el-container>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import {
+  ArrowDown,
+  Collection,
+  DataAnalysis,
+  House,
+  Menu,
+  Opportunity,
+  Reading,
+  Setting,
+  TrendCharts,
+} from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const isMobile = ref(false)
+const mobileMenuVisible = ref(false)
+
+const menuItems = [
+  { path: '/', label: '新闻首页', mobileLabel: '首页', icon: House },
+  { path: '/dashboard', label: '学习看板', mobileLabel: '看板', icon: DataAnalysis },
+  { path: '/news-manage', label: '新闻管理', mobileLabel: '管理', icon: Setting },
+  { path: '/recommend', label: '智能推荐', mobileLabel: '推荐', icon: Opportunity },
+  { path: '/progress', label: '学习进度', mobileLabel: '进度', icon: TrendCharts },
+  { path: '/vocabulary', label: '我的词句', mobileLabel: '词句', icon: Collection },
+]
 
 const pageTitleMap = {
   '/': '新闻列表',
@@ -107,6 +155,12 @@ const pageTitle = computed(() => {
   return pageTitleMap[route.path] || 'NewsReader'
 })
 
+const activeMenuPath = computed(() => {
+  if (route.path.startsWith('/article/')) return '/'
+  if (route.path.startsWith('/exercise/')) return '/dashboard'
+  return route.path
+})
+
 const levelTagType = computed(() => {
   const map = { BEGINNER: 'info', INTERMEDIATE: 'warning', ADVANCED: 'success' }
   return map[userStore.level] || 'info'
@@ -118,6 +172,31 @@ function handleCommand(cmd) {
     router.push('/login')
   }
 }
+
+function goTo(path) {
+  mobileMenuVisible.value = false
+  if (route.path !== path) router.push(path)
+}
+
+function updateViewport() {
+  isMobile.value = window.innerWidth <= 992
+}
+
+watch(
+  () => route.path,
+  () => {
+    mobileMenuVisible.value = false
+  }
+)
+
+onMounted(() => {
+  updateViewport()
+  window.addEventListener('resize', updateViewport)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateViewport)
+})
 </script>
 
 <style scoped>
@@ -173,6 +252,11 @@ function handleCommand(cmd) {
   font-size: 16px;
   font-weight: 600;
 }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .header-right {
   display: flex;
   align-items: center;
@@ -207,5 +291,89 @@ function handleCommand(cmd) {
 }
 .route-fallback {
   min-height: calc(100vh - 130px);
+}
+
+.mobile-tabbar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  align-items: center;
+  padding: 6px;
+  border-radius: 16px;
+}
+
+.tab-item {
+  border: none;
+  background: transparent;
+  color: #606266;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 7px 2px;
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.tab-item.active {
+  color: #a33a2b;
+  background: rgba(163, 58, 43, 0.12);
+}
+
+:deep(.mobile-drawer .el-drawer) {
+  background:
+    radial-gradient(circle at top left, rgba(222, 143, 85, 0.2), transparent 35%),
+    linear-gradient(180deg, #3a2a24, #2a201c);
+}
+
+:deep(.mobile-drawer .el-drawer__body) {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-logo {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 992px) {
+  .header {
+    margin: 10px 10px 0;
+    padding: 0 10px;
+    border-radius: 14px;
+  }
+
+  .main-content {
+    padding: 14px;
+  }
+
+  .with-bottom-nav {
+    padding-bottom: 94px;
+  }
+
+  .level-tag {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .page-title {
+    font-size: 15px;
+  }
+
+  .header-right {
+    gap: 6px;
+  }
+
+  .avatar-wrap {
+    gap: 4px;
+  }
 }
 </style>

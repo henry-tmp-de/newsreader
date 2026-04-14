@@ -10,7 +10,7 @@
       <div class="panel-header">自定义更新新闻</div>
       <el-form :inline="true" class="fetch-form">
         <el-form-item label="板块">
-          <el-select v-model="selectedCategories" multiple collapse-tags collapse-tags-tooltip style="width: 380px" placeholder="选择板块">
+          <el-select v-model="selectedCategories" multiple collapse-tags collapse-tags-tooltip class="category-select" placeholder="选择板块">
             <el-option v-for="c in categories" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </el-form-item>
@@ -32,10 +32,11 @@
           </el-button>
           <el-button type="danger" @click="clearAll">清空新闻库</el-button>
         </div>
-        <el-input v-model="keyword" placeholder="搜索标题/摘要" clearable style="width: 280px" @keyup.enter="loadArticles(true)" @clear="loadArticles(true)" />
+        <el-input v-model="keyword" placeholder="搜索标题/摘要" clearable class="keyword-input" @keyup.enter="loadArticles(true)" @clear="loadArticles(true)" />
       </div>
 
-      <el-table :data="articles" @selection-change="onSelectChange" row-key="id" stripe>
+      <div class="table-scroll">
+        <el-table :data="articles" @selection-change="onSelectChange" row-key="id" stripe>
         <el-table-column type="selection" width="50" />
         <el-table-column prop="title" label="标题" min-width="320" show-overflow-tooltip />
         <el-table-column prop="category" label="板块" width="100" />
@@ -49,6 +50,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <el-pagination
         v-if="total > 0"
@@ -200,9 +202,14 @@ onMounted(() => loadArticles(true))
 .hint { color: #7b8792; font-size: 12px; margin-top: 6px; }
 .table-actions { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .left { display: flex; gap: 10px; }
+.category-select { width: 380px; }
+.keyword-input { width: 280px; }
+.table-scroll { width: 100%; overflow-x: auto; }
 .pagination { margin-top: 14px; display: flex; justify-content: center; }
 @media (max-width: 980px) {
   .table-actions { flex-direction: column; }
   .left { flex-wrap: wrap; }
+  .category-select,
+  .keyword-input { width: 100%; }
 }
 </style>

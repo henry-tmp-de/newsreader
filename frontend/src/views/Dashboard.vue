@@ -12,7 +12,7 @@
 
     <!-- 统计卡片 -->
     <el-row :gutter="20" class="stat-row">
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="12" :lg="6">
         <el-card class="stat-card" shadow="never">
           <el-statistic title="已读文章" :value="stats.readArticles || 0">
             <template #suffix><span class="unit">篇</span></template>
@@ -20,7 +20,7 @@
           <el-icon class="stat-icon" color="#409EFF" size="32"><Document /></el-icon>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="12" :lg="6">
         <el-card class="stat-card" shadow="never">
           <el-statistic title="完成练习" :value="stats.totalExercises || 0">
             <template #suffix><span class="unit">题</span></template>
@@ -28,7 +28,7 @@
           <el-icon class="stat-icon" color="#67C23A" size="32"><EditPen /></el-icon>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="12" :lg="6">
         <el-card class="stat-card" shadow="never">
           <el-statistic title="答题正确率" :value="stats.accuracy || 0">
             <template #suffix>%</template>
@@ -36,7 +36,7 @@
           <el-icon class="stat-icon" color="#E6A23C" size="32"><TrendCharts /></el-icon>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="24" :sm="12" :md="12" :lg="6">
         <el-card class="stat-card" shadow="never">
           <el-statistic title="词汇量" :value="stats.vocabularySize || 0">
             <template #suffix><span class="unit">词</span></template>
