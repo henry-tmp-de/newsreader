@@ -6,7 +6,7 @@
         <h1>让阅读更容易</h1>
         <p class="hero-subtitle">Daily English Briefing</p>
         <p class="hero-desc">
-          聚合国际资讯、按难度分层，并接入 DeepSeek 做摘要、关键词和练习增强，让阅读、理解与复盘连成一个流程。
+          精选国际资讯，按难度分层，AI 自动生成摘要、关键词与练习题，让每次阅读都有收获。
         </p>
 
         <div class="hero-points">
@@ -32,7 +32,7 @@
         <div class="metric-card">
           <span class="metric-label">当前文章</span>
           <strong>{{ total }}</strong>
-          <span class="metric-note">已沉淀到阅读库</span>
+          <span class="metric-note">已收录</span>
         </div>
         <div class="metric-card accent">
           <span class="metric-label">本页可读</span>
@@ -53,7 +53,7 @@
       <div class="control-header">
         <div>
           <p class="section-kicker">编辑台</p>
-          <h2>筛选你今天想读的新闻切片</h2>
+          <h2>筛选今天想读的文章</h2>
         </div>
         <el-button text @click="resetFilters">清空筛选</el-button>
       </div>
@@ -102,7 +102,7 @@
       <div class="news-header">
         <div>
           <p class="section-kicker">精选版面</p>
-          <h2>按新闻阅读逻辑组织的文章流</h2>
+          <h2>精选文章</h2>
         </div>
         <span class="news-summary">共 {{ total }} 篇，当前显示 {{ articles.length }} 篇</span>
       </div>

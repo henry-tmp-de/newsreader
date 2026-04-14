@@ -31,6 +31,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Service
 public class ArticleServiceImpl implements ArticleService {
@@ -45,6 +46,10 @@ public class ArticleServiceImpl implements ArticleService {
 
     private static final String NEWS_API_BASE_URL = "https://newsapi.org/v2";
     private static final int MIN_ARTICLE_CONTENT_LENGTH = 120;
+    private static final int MIN_ARTICLE_WORD_COUNT = 30;
+    private static final double EXTRA_FETCH_RATIO = 0.15;
+    private static final int MAX_FETCH_ROUNDS_PER_CATEGORY = 8;
+    private static final Pattern TRUNCATED_SUFFIX_PATTERN = Pattern.compile("\\[\\+\\d+\\s+chars]$");
 
     public ArticleServiceImpl(ArticleMapper articleMapper,
                               SystemConfigService systemConfigService,
@@ -89,12 +94,20 @@ public class ArticleServiceImpl implements ArticleService {
                    .like(Article::getSummary, keyword);
         }
         wrapper.orderByDesc(Article::getPublishedAt);
-        return articleMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        Page<Article> page = articleMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        page.setRecords(page.getRecords().stream()
+            .filter(a -> a != null && isContentQualified(a.getContent()))
+            .toList());
+        return page;
     }
 
     @Override
     public Article getById(Long id) {
-        return articleMapper.selectById(id);
+        Article article = articleMapper.selectById(id);
+        if (article == null) {
+            return null;
+        }
+        return isContentQualified(article.getContent()) ? article : null;
     }
 
     @Override
@@ -112,56 +125,96 @@ public class ArticleServiceImpl implements ArticleService {
             throw new RuntimeException("请先在系统配置中填写 NewsAPI Key");
         }
 
+        int purgedInvalid = purgeInvalidArticles();
+        if (purgedInvalid > 0) {
+            log.info("Purged {} invalid historical articles before fetch", purgedInvalid);
+        }
+
         NewsFetchResultDTO result = new NewsFetchResultDTO();
         List<String> selectedCategories = normalizeCategories(categories);
         int safePageSize = normalizePageSize(pageSize);
 
         for (String category : selectedCategories) {
-            try {
-                String url = String.format("%s/top-headlines?category=%s&language=en&pageSize=%d&apiKey=%s",
-                    NEWS_API_BASE_URL, category, safePageSize, newsApiKey);
-                var responseEntity = restTemplate.getForEntity(java.net.URI.create(url), String.class);
-                String response = responseEntity.getBody();
-                if (!StringUtils.hasText(response)) {
-                    result.setFailed(result.getFailed() + 1);
-                    continue;
-                }
-                JsonNode root = objectMapper.readTree(response);
-
-                if (!"ok".equalsIgnoreCase(root.path("status").asText())) {
-                    result.setFailed(result.getFailed() + 1);
-                    log.warn("NewsAPI error: status={}, code={}, message={}",
-                            root.path("status").asText(),
-                            root.path("code").asText(),
-                            root.path("message").asText());
-                    continue;
-                }
-
-                JsonNode articles = root.get("articles");
-                if (articles != null && articles.isArray()) {
-                    for (JsonNode node : articles) {
-                        result.setFetched(result.getFetched() + 1);
-                        SaveOutcome outcome = saveArticleFromNode(node, category);
-                        if (outcome == SaveOutcome.INSERTED) {
-                            result.setInserted(result.getInserted() + 1);
-                        } else if (outcome == SaveOutcome.DUPLICATED) {
-                            result.setDuplicated(result.getDuplicated() + 1);
-                        } else if (outcome == SaveOutcome.SKIPPED_NO_CONTENT) {
-                            result.setSkippedNoContent(result.getSkippedNoContent() + 1);
-                        } else {
-                            result.setFailed(result.getFailed() + 1);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                result.setFailed(result.getFailed() + 1);
-                log.error("Failed to fetch news for category: {}", category, e);
-            }
+            fetchCategoryUntilTarget(category, safePageSize, newsApiKey, result);
         }
 
         result.setEnqueuedForEnrichment(result.getInserted());
         articleEnrichmentService.enrichPendingArticlesAsync();
         return result;
+    }
+
+    @SuppressWarnings("null")
+    private void fetchCategoryUntilTarget(String category, int targetInsertCount, String newsApiKey, NewsFetchResultDTO result) {
+        int insertedForCategory = 0;
+        int page = 1;
+        int rounds = 0;
+
+        while (insertedForCategory < targetInsertCount && rounds < MAX_FETCH_ROUNDS_PER_CATEGORY) {
+            try {
+                int remaining = targetInsertCount - insertedForCategory;
+                int requestPageSize = (int) Math.ceil(remaining * (1 + EXTRA_FETCH_RATIO));
+                requestPageSize = Math.max(1, Math.min(50, requestPageSize));
+
+                String url = String.format(
+                        "%s/top-headlines?category=%s&language=en&pageSize=%d&page=%d&apiKey=%s",
+                        NEWS_API_BASE_URL, category, requestPageSize, page, newsApiKey);
+
+                var responseEntity = restTemplate.getForEntity(url, String.class);
+                String response = responseEntity.getBody();
+                if (!StringUtils.hasText(response)) {
+                    result.setFailed(result.getFailed() + 1);
+                    break;
+                }
+
+                JsonNode root = objectMapper.readTree(response);
+                if (!"ok".equalsIgnoreCase(root.path("status").asText())) {
+                    result.setFailed(result.getFailed() + 1);
+                    log.warn("NewsAPI error: category={}, page={}, status={}, code={}, message={}",
+                            category,
+                            page,
+                            root.path("status").asText(),
+                            root.path("code").asText(),
+                            root.path("message").asText());
+                    break;
+                }
+
+                JsonNode articles = root.get("articles");
+                if (articles == null || !articles.isArray() || articles.isEmpty()) {
+                    break;
+                }
+
+                for (JsonNode node : articles) {
+                    result.setFetched(result.getFetched() + 1);
+                    SaveOutcome outcome = saveArticleFromNode(node, category);
+                    if (outcome == SaveOutcome.INSERTED) {
+                        result.setInserted(result.getInserted() + 1);
+                        insertedForCategory++;
+                    } else if (outcome == SaveOutcome.DUPLICATED) {
+                        result.setDuplicated(result.getDuplicated() + 1);
+                    } else if (outcome == SaveOutcome.SKIPPED_NO_CONTENT) {
+                        result.setSkippedNoContent(result.getSkippedNoContent() + 1);
+                    } else {
+                        result.setFailed(result.getFailed() + 1);
+                    }
+
+                    if (insertedForCategory >= targetInsertCount) {
+                        break;
+                    }
+                }
+
+                page++;
+                rounds++;
+            } catch (Exception e) {
+                result.setFailed(result.getFailed() + 1);
+                log.error("Failed to fetch news for category: {}, page: {}", category, page, e);
+                break;
+            }
+        }
+
+        if (insertedForCategory < targetInsertCount) {
+            log.warn("Category {} reached fetch limit before target: inserted={}, target={}",
+                    category, insertedForCategory, targetInsertCount);
+        }
     }
 
     private List<String> normalizeCategories(List<String> categories) {
@@ -247,7 +300,7 @@ public class ArticleServiceImpl implements ArticleService {
             }
 
             String content = resolveArticleContent(node, url);
-            if (!StringUtils.hasText(content) || content.length() < 30) {
+            if (!isContentQualified(content)) {
                 return SaveOutcome.SKIPPED_NO_CONTENT;
             }
 
@@ -287,15 +340,22 @@ public class ArticleServiceImpl implements ArticleService {
 
         if (shouldFetchOriginal && StringUtils.hasText(url)) {
             String fullContent = fetchFullContentFromUrl(url);
-            if (StringUtils.hasText(fullContent) && fullContent.length() >= MIN_ARTICLE_CONTENT_LENGTH) {
+            if (StringUtils.hasText(fullContent)
+                    && fullContent.length() >= MIN_ARTICLE_CONTENT_LENGTH
+                    && !isLikelyTruncatedByNewsApi(fullContent)) {
                 return fullContent;
             }
         }
 
-        if (StringUtils.hasText(newsApiContent) && newsApiContent.length() >= 80) {
+        if (StringUtils.hasText(newsApiContent)
+                && newsApiContent.length() >= 80
+                && !isLikelyTruncatedByNewsApi(newsApiContent)) {
             return newsApiContent;
         }
-        return description;
+        if (StringUtils.hasText(description) && !isLikelyTruncatedByNewsApi(description)) {
+            return description;
+        }
+        return "";
     }
 
     private void backfillExistingArticleIfNeeded(Article existed, JsonNode node, String url) {
@@ -307,7 +367,7 @@ public class ArticleServiceImpl implements ArticleService {
             return;
         }
         String resolved = resolveArticleContent(node, url);
-        if (!StringUtils.hasText(resolved) || resolved.length() <= currentLength(current)) {
+        if (!isContentQualified(resolved) || resolved.length() <= currentLength(current)) {
             return;
         }
         existed.setContent(resolved);
@@ -315,9 +375,50 @@ public class ArticleServiceImpl implements ArticleService {
     }
 
     private boolean isContentIncomplete(String content) {
-        return !StringUtils.hasText(content)
-                || content.length() < MIN_ARTICLE_CONTENT_LENGTH
-                || isLikelyTruncatedByNewsApi(content);
+        return !isContentQualified(content)
+            || content.length() < MIN_ARTICLE_CONTENT_LENGTH;
+        }
+
+        private boolean isContentQualified(String content) {
+        return StringUtils.hasText(content)
+            && !isLikelyTruncatedByNewsApi(content)
+            && getWordCount(content) >= MIN_ARTICLE_WORD_COUNT;
+    }
+
+    private int getWordCount(String content) {
+        if (!StringUtils.hasText(content)) {
+            return 0;
+        }
+        return content.trim().split("\\s+").length;
+    }
+
+    private int purgeInvalidArticles() {
+        int deleted = 0;
+        long lastId = 0L;
+        while (true) {
+            List<Article> batch = articleMapper.selectList(
+                    new LambdaQueryWrapper<Article>()
+                            .select(Article::getId, Article::getContent)
+                            .gt(Article::getId, lastId)
+                            .orderByAsc(Article::getId)
+                            .last("limit 500"));
+            if (batch == null || batch.isEmpty()) {
+                break;
+            }
+
+            lastId = batch.get(batch.size() - 1).getId();
+
+            List<Long> invalidIds = batch.stream()
+                    .filter(a -> a != null && a.getId() != null)
+                    .filter(a -> !isContentQualified(a.getContent()))
+                    .map(Article::getId)
+                    .toList();
+
+            if (!invalidIds.isEmpty()) {
+                deleted += articleMapper.deleteBatchIds(invalidIds);
+            }
+        }
+        return deleted;
     }
 
     private int currentLength(String content) {
@@ -328,7 +429,7 @@ public class ArticleServiceImpl implements ArticleService {
         if (!StringUtils.hasText(content)) {
             return false;
         }
-        return content.contains("[+") && content.contains("chars]");
+        return TRUNCATED_SUFFIX_PATTERN.matcher(content.trim()).find();
     }
 
     private String fetchFullContentFromUrl(String url) {

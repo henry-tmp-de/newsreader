@@ -31,7 +31,7 @@
     </div>
 
     <div class="card-footer">
-      <span class="source">阅读卡片</span>
+      <span class="source">点击阅读</span>
       <span class="date">{{ formatDate(article.publishedAt) }}</span>
     </div>
   </el-card>

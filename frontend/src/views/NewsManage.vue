@@ -59,7 +59,7 @@
         :total="total"
         layout="total, prev, pager, next"
         class="pagination"
-        @current-change="loadArticles"
+        @current-change="handlePageChange"
       />
     </section>
   </div>
@@ -113,6 +113,10 @@ async function loadArticles(reset = false) {
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange() {
+  loadArticles(false)
 }
 
 async function handleCustomFetch() {

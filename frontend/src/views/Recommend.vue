@@ -5,7 +5,7 @@
         <div>
           <p class="kicker">PROFILE ENGINE</p>
           <h2>用户画像与 i+1 推荐</h2>
-          <p class="desc">基于阅读时长、练习准确率、查词频次和兴趣偏好，动态生成可理解输入推荐。</p>
+          <p class="desc">根据你的阅读习惯与兴趣偏好，智能推荐适合当前水平的文章。</p>
         </div>
         <el-button type="primary" :icon="Refresh" :loading="loading" @click="refreshAll">刷新推荐</el-button>
       </div>
