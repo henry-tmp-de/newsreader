@@ -33,7 +33,6 @@
             <div
               ref="articleContentRef"
               class="article-content"
-              @mouseup="handleTextSelection"
               @touchend.passive="handleTextSelection"
             >
               <p v-for="(para, i) in paragraphs" :key="i" class="paragraph">{{ para }}</p>
@@ -70,7 +69,10 @@
               :key="idx"
               :class="['msg', msg.role === 'user' ? 'user' : 'assistant']"
             >
-              <div class="bubble">{{ msg.content }}</div>
+              <div class="bubble">
+                <TypewriterText v-if="msg.role === 'assistant'" :text="msg.content" :speed="14" />
+                <span v-else>{{ msg.content }}</span>
+              </div>
             </div>
             <div v-if="chatLoading" class="msg assistant">
               <div class="bubble">正在思考中...</div>
@@ -92,6 +94,15 @@
       </div>
     </template>
   </div>
+  <teleport to="body">
+    <button
+      v-if="miniBtn"
+      class="translate-mini-btn"
+      :style="{ left: miniBtn.x + 'px', top: miniBtn.y + 'px' }"
+      @mousedown.stop
+      @click.stop="confirmTranslate"
+    >翻译</button>
+  </teleport>
 </template>
 
 <script setup>
@@ -100,6 +111,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getArticleDetailApi } from '@/api/news'
 import { articleChatApi, recordActionApi } from '@/api/learning'
 import WordPopover from '@/components/WordPopover.vue'
+import TypewriterText from '@/components/TypewriterText.vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Document, Check, Link, InfoFilled } from '@element-plus/icons-vue'
 
@@ -113,6 +125,7 @@ const selectedText = ref('')
 const selectionMode = ref('word')
 const selectedContext = ref('')
 const popoverPos = ref({ x: 0, y: 0 })
+const miniBtn = ref(null) // { text, mode, context, pos, x, y } — 桌面端句子选中后的确认按钮
 const articleContentRef = ref(null)
 
 const chatInput = ref('')
@@ -135,28 +148,38 @@ function formatDate(d) {
   return d ? new Date(d).toLocaleDateString('zh-CN') : ''
 }
 
-function handleTextSelection(e) {
-  const isTouch = e?.type?.startsWith('touch')
-  if (isTouch) {
-    // 移动端在 touchend 后选区信息可能延迟更新，稍后读取更稳定。
-    window.setTimeout(() => applySelection(e), 120)
-    return
-  }
-  applySelection(e)
+// 桌面端：document-level mouseup 确保拖选到 div 外松手也能触发
+function handleDesktopMouseup(e) {
+  if (e.target?.closest?.('.word-popover') || e.target?.closest?.('.translate-mini-btn')) return
+  applySelection()
 }
 
-function applySelection(e) {
+// 移动端：touchend 后延迟读取选区
+function handleTextSelection() {
+  window.setTimeout(() => applySelection(), 120)
+}
+
+// 点击非小按钮区域时关闭小按钮（注册在 document mousedown，比 click 更早）
+function dismissMiniBtn(e) {
+  if (!miniBtn.value) return
+  if (e.target?.closest?.('.translate-mini-btn')) return
+  miniBtn.value = null
+}
+
+function applySelection() {
   const selection = window.getSelection()
   const text = selection?.toString().trim() || ''
   const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
 
   if (!isSelectionInsideArticle(range)) {
     selectedText.value = ''
+    miniBtn.value = null
     return
   }
 
   if (!text || text.length > 220) {
     selectedText.value = ''
+    miniBtn.value = null
     return
   }
 
@@ -165,13 +188,41 @@ function applySelection(e) {
 
   if (!isWord && !isSentence) {
     selectedText.value = ''
+    miniBtn.value = null
     return
   }
 
+  const mode = isWord ? 'word' : 'sentence'
+  const context = selection.anchorNode?.parentElement?.innerText?.trim() || text
+  const pos = resolvePopoverPosition(range)
+  const isDesktop = !window.matchMedia('(pointer: coarse)').matches
+
+  if (isDesktop && mode === 'sentence') {
+    // 桌面端选中句子：不立即翻译，只显示小按钮，等用户主动点击确认
+    const rect = range.getBoundingClientRect()
+    const btnX = Math.min(rect.right + 6, window.innerWidth - 76)
+    const btnY = rect.bottom + 6
+    miniBtn.value = { text, mode, context, pos, x: btnX, y: btnY }
+    return
+  }
+
+  // 词语（桌面）或任意选区（移动端）→ 直接弹翻译框
+  miniBtn.value = null
+  showPopover(text, mode, context, pos)
+}
+
+function showPopover(text, mode, context, pos) {
   selectedText.value = text
-  selectionMode.value = isWord ? 'word' : 'sentence'
-  selectedContext.value = selection.anchorNode?.parentElement?.innerText?.trim() || text
-  popoverPos.value = resolvePopoverPosition(e, range)
+  selectionMode.value = mode
+  selectedContext.value = context
+  popoverPos.value = pos
+}
+
+function confirmTranslate() {
+  if (!miniBtn.value) return
+  const { text, mode, context, pos } = miniBtn.value
+  miniBtn.value = null
+  showPopover(text, mode, context, pos)
 }
 
 function isSelectionInsideArticle(range) {
@@ -181,25 +232,23 @@ function isSelectionInsideArticle(range) {
   return !!target && articleContentRef.value.contains(target)
 }
 
-function resolvePopoverPosition(e, range) {
-  if (e?.changedTouches?.[0]) {
-    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY }
-  }
-  if (typeof e?.clientX === 'number' && typeof e?.clientY === 'number') {
-    return { x: e.clientX, y: e.clientY }
-  }
+function resolvePopoverPosition(range) {
   const rect = range?.getBoundingClientRect?.()
-  if (rect) {
+  if (rect && rect.width > 0) {
     return {
       x: rect.left + rect.width / 2,
-      y: rect.bottom,
+      y: rect.bottom,   // 选区底部，供"显示在下方"用
+      top: rect.top,    // 选区顶部，供"显示在上方"用
     }
   }
-  return { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+  const mid = window.innerHeight / 2
+  return { x: window.innerWidth / 2, y: mid + 20, top: mid }
 }
 
 let selectionTimer = null
 function onSelectionChange() {
+  // 桌面端（精确指针设备）mouseup 已经处理过了，selectionchange 会重复触发导致多次 API 请求
+  if (!window.matchMedia('(pointer: coarse)').matches) return
   if (!articleContentRef.value) return
   if (selectionTimer) window.clearTimeout(selectionTimer)
   selectionTimer = window.setTimeout(() => applySelection(), 120)
@@ -250,6 +299,8 @@ function goToExercise() {
 let startTime = Date.now()
 onUnmounted(async () => {
   document.removeEventListener('selectionchange', onSelectionChange)
+  document.removeEventListener('mouseup', handleDesktopMouseup)
+  document.removeEventListener('mousedown', dismissMiniBtn)
   if (selectionTimer) window.clearTimeout(selectionTimer)
   if (article.value) {
     const duration = Math.round((Date.now() - startTime) / 1000)
@@ -259,6 +310,8 @@ onUnmounted(async () => {
 
 onMounted(async () => {
   document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('mouseup', handleDesktopMouseup)
+  document.addEventListener('mousedown', dismissMiniBtn)
   try {
     article.value = await getArticleDetailApi(route.params.id)
     await recordActionApi({ articleId: route.params.id, actionType: 'READ' })
@@ -382,5 +435,27 @@ onMounted(async () => {
     font-size: 16px;
     line-height: 1.85;
   }
+}
+
+/* 浮动翻译确认按钮（teleport 到 body，位置 fixed） */
+.translate-mini-btn {
+  position: fixed;
+  z-index: 10000;
+  padding: 4px 12px;
+  background: #409EFF;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(64, 158, 255, 0.45);
+  user-select: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+  pointer-events: all;
+}
+.translate-mini-btn:hover {
+  background: #66b1ff;
 }
 </style>

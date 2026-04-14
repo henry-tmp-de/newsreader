@@ -53,7 +53,7 @@
         :key="ex.id"
         shadow="never"
         class="exercise-card paper"
-        :class="{ answered: results[ex.id] !== undefined }"
+        :class="cardStateClass(ex.id)"
       >
         <div class="question-header">
           <el-tag size="small" :type="typeTagType(ex.type)">{{ ex.type }}</el-tag>
@@ -63,7 +63,7 @@
 
         <el-radio-group
           v-model="answers[ex.id]"
-          :disabled="results[ex.id] !== undefined"
+          :disabled="results[ex.id] !== undefined || pendingFeedbackIds.includes(ex.id)"
           class="options"
         >
           <el-radio
@@ -88,14 +88,19 @@
           </el-button>
         </div>
 
-        <el-alert
-          v-if="results[ex.id]"
-          :type="results[ex.id].correct ? 'success' : 'error'"
-          :title="results[ex.id].correct ? '答对了！' : '答错了'"
-          :description="results[ex.id].feedback"
-          show-icon
-          class="feedback-alert"
-        />
+        <div v-if="results[ex.id]" :class="['feedback-panel', results[ex.id].correct ? 'ok' : 'bad']">
+          <div class="feedback-title">{{ results[ex.id].correct ? '答对了' : '答错了' }}</div>
+          <div v-if="results[ex.id].pending" class="feedback-pending">
+            <el-icon class="rotating"><Loading /></el-icon>
+            <span>解析正在生成中...</span>
+          </div>
+          <TypewriterText
+            v-else
+            :text="results[ex.id].feedback || ''"
+            :speed="16"
+            class="feedback-text"
+          />
+        </div>
       </el-card>
 
       <!-- 重新生成 -->
@@ -115,6 +120,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getExercisesApi, generateExercisesApi, submitAnswerApi } from '@/api/exercise'
 import { ArrowLeft, Loading, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import TypewriterText from '@/components/TypewriterText.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,6 +129,7 @@ const answers = ref({})
 const results = ref({})
 const loading = ref(true)
 const generating = ref(false)
+const pendingFeedbackIds = ref([])
 const generationProgress = ref(0)
 const generationHint = ref('准备题目结构...')
 let generationTimer = null
@@ -159,6 +166,13 @@ function getOptionClass(ex, letter) {
   if (letter === ex.correctAnswer) return 'correct-option'
   if (letter === answers.value[ex.id] && !result.correct) return 'wrong-option'
   return ''
+}
+
+function cardStateClass(exerciseId) {
+  const result = results.value[exerciseId]
+  if (!result) return ''
+  if (result.correct) return 'answered-correct'
+  return 'answered-wrong'
 }
 
 async function loadExercises() {
@@ -219,12 +233,43 @@ function finishGenerationProgress(success) {
 async function submitAnswer(ex) {
   const answer = answers.value[ex.id]
   if (!answer) return
+  if (pendingFeedbackIds.value.includes(ex.id)) return
+
+  const correct = ex.correctAnswer.toUpperCase() === answer.toUpperCase()
+
+  if (correct) {
+    // 答对可立即展示，避免额外等待。
+    results.value = {
+      ...results.value,
+      [ex.id]: { correct: true, pending: false, feedback: ex.explanation || '回答正确，继续保持。' },
+    }
+  } else {
+    // 先给用户即时反馈，再异步等待解析返回。
+    results.value = {
+      ...results.value,
+      [ex.id]: { correct: false, pending: true, feedback: '' },
+    }
+    pendingFeedbackIds.value.push(ex.id)
+  }
+
   try {
     const feedback = await submitAnswerApi({ exerciseId: ex.id, answer })
-    const correct = ex.correctAnswer.toUpperCase() === answer.toUpperCase()
-    results.value = { ...results.value, [ex.id]: { correct, feedback } }
+    if (!correct) {
+      results.value = {
+        ...results.value,
+        [ex.id]: { correct: false, pending: false, feedback: feedback || '暂未生成解析，请稍后重试。' },
+      }
+    }
   } catch {
+    if (!correct) {
+      results.value = {
+        ...results.value,
+        [ex.id]: { correct: false, pending: false, feedback: '解析生成失败，请稍后再试。' },
+      }
+    }
     ElMessage.error('提交失败，请重试')
+  } finally {
+    pendingFeedbackIds.value = pendingFeedbackIds.value.filter(id => id !== ex.id)
   }
 }
 
@@ -250,7 +295,8 @@ onUnmounted(() => {
 .subtitle { color: #909399; font-size: 14px; }
 .progress { margin: 4px 0; }
 .exercise-card { border-radius: 20px; transition: border-color .3s; }
-.exercise-card.answered { border-left: 4px solid #67c23a; }
+.exercise-card.answered-correct { border-left: 4px solid #67c23a; }
+.exercise-card.answered-wrong { border-left: 4px solid #f56c6c; }
 .question-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .q-num { color: #909399; font-size: 13px; }
 .question { font-size: 16px; font-weight: 500; margin-bottom: 16px; line-height: 1.6; }
@@ -260,7 +306,34 @@ onUnmounted(() => {
 .correct-option { background: #f0f9eb; border-color: #67c23a !important; }
 .wrong-option { background: #fef0f0; border-color: #f56c6c !important; }
 .submit-row { margin-top: 16px; }
-.feedback-alert { margin-top: 16px; }
+.feedback-panel {
+  margin-top: 14px;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid transparent;
+}
+.feedback-panel.ok {
+  background: #f0f9eb;
+  border-color: #b3e19d;
+}
+.feedback-panel.bad {
+  background: #fef0f0;
+  border-color: #f3c6c6;
+}
+.feedback-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.feedback-text {
+  color: #3a4754;
+  line-height: 1.7;
+}
+.feedback-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a05a32;
+}
 .empty-card, .regen-card { text-align: center; padding: 20px; }
 .center-loading { padding: 20px 0; }
 .generating-card {

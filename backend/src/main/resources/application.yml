@@ -50,7 +50,7 @@ news-api:
 deepseek:
   api-key: your_deepseek_api_key
   base-url: https://api.deepseek.com/v1
-  model: deepseek-chat
+  model: deepseek-v3
   max-tokens: 2000
 
 logging:

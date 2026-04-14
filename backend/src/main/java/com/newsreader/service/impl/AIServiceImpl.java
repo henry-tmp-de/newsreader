@@ -23,9 +23,9 @@ public class AIServiceImpl implements AIService {
     private static final int SUMMARY_TOKENS = 220;
     private static final int KEYWORD_TOKENS = 120;
     private static final int DIFFICULTY_TOKENS = 12;
-    private static final int LOOKUP_TOKENS = 260;
+    private static final int LOOKUP_TOKENS = 180;
     private static final int EXERCISE_TOKENS = 880;
-    private static final int EVAL_TOKENS = 220;
+    private static final int EVAL_TOKENS = 130;
     private static final int ARTICLE_CHAT_TOKENS = 700;
 
 
@@ -202,9 +202,9 @@ public class AIServiceImpl implements AIService {
     public String evaluateAnswer(String question, String userAnswer, String correctAnswer, String context) {
         String prompt = String.format(
                 "Question: %s\nUser's answer: %s\nCorrect answer: %s\nContext: %s\n" +
-                "Provide a brief explanation (2-3 sentences) of why the correct answer is right, in English.",
+                "Give a concise explanation in <=2 English sentences and one short Chinese hint. Keep it under 80 words.",
                 question, userAnswer, correctAnswer, context);
-        return chat("You are a helpful English teacher.", prompt, EVAL_TOKENS, 0.25);
+            return chat("You are a fast and clear English teacher.", prompt, EVAL_TOKENS, 0.1);
     }
 
     @Override
