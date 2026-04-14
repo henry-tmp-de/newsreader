@@ -4,10 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.newsreader.service.AIService;
 import com.newsreader.service.SystemConfigService;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.util.StringUtils;
@@ -16,6 +20,14 @@ import java.util.*;
 
 @Service
 public class AIServiceImpl implements AIService {
+    private static final int SUMMARY_TOKENS = 220;
+    private static final int KEYWORD_TOKENS = 120;
+    private static final int DIFFICULTY_TOKENS = 12;
+    private static final int LOOKUP_TOKENS = 260;
+    private static final int EXERCISE_TOKENS = 880;
+    private static final int EVAL_TOKENS = 220;
+    private static final int ARTICLE_CHAT_TOKENS = 700;
+
 
     private static final Logger log = LoggerFactory.getLogger(AIServiceImpl.class);
 
@@ -29,14 +41,31 @@ public class AIServiceImpl implements AIService {
     private Integer maxTokens;
 
     private final SystemConfigService systemConfigService;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AIServiceImpl(SystemConfigService systemConfigService) {
         this.systemConfigService = systemConfigService;
+        this.restTemplate = buildRestTemplate();
     }
 
-    private String chat(String systemPrompt, String userContent) {
+    @SuppressWarnings("null")
+    private static RestTemplate buildRestTemplate() {
+        System.setProperty("java.net.useSystemProxies", "true");
+        SystemDefaultRoutePlanner routePlanner =
+                new SystemDefaultRoutePlanner(java.net.ProxySelector.getDefault());
+        CloseableHttpClient httpClient = HttpClients.custom()
+                .setRoutePlanner(routePlanner)
+                .build();
+
+        HttpComponentsClientHttpRequestFactory factory =
+                new HttpComponentsClientHttpRequestFactory(httpClient);
+        factory.setConnectTimeout(8_000);
+        factory.setReadTimeout(30_000);
+        return new RestTemplate(factory);
+    }
+
+    private String chat(String systemPrompt, String userContent, Integer requestMaxTokens, Double temperature) {
         try {
             String resolvedApiKey = systemConfigService.getDeepseekApiKey();
             if (!StringUtils.hasText(resolvedApiKey) || resolvedApiKey.contains("your_deepseek_api_key")) {
@@ -49,7 +78,9 @@ public class AIServiceImpl implements AIService {
 
             Map<String, Object> body = new HashMap<>();
             body.put("model", model);
-            body.put("max_tokens", maxTokens);
+                body.put("max_tokens", Math.max(64, requestMaxTokens == null ? maxTokens : requestMaxTokens));
+                body.put("temperature", temperature == null ? 0.2 : temperature);
+                body.put("stream", false);
             body.put("messages", List.of(
                     Map.of("role", "system", "content", systemPrompt),
                     Map.of("role", "user", "content", userContent)
@@ -70,8 +101,10 @@ public class AIServiceImpl implements AIService {
     @Override
     public String generateSummary(String content) {
         String result = chat(
-                "You are an English learning assistant. Generate a concise 2-3 sentence summary of the article.",
-                content.length() > 2000 ? content.substring(0, 2000) : content
+                "You are an English learning assistant. Return a concise 2-3 sentence summary.",
+                content.length() > 1500 ? content.substring(0, 1500) : content,
+                SUMMARY_TOKENS,
+                0.25
         );
         return result.isBlank() ? content.substring(0, Math.min(200, content.length())) : result;
     }
@@ -80,7 +113,9 @@ public class AIServiceImpl implements AIService {
     public String extractKeywords(String content) {
         String result = chat(
                 "Extract 5-8 key vocabulary words from this article. Return only the words separated by commas, no explanation.",
-                content.length() > 1500 ? content.substring(0, 1500) : content
+                content.length() > 1200 ? content.substring(0, 1200) : content,
+                KEYWORD_TOKENS,
+                0.1
         );
         return result.isBlank() ? "" : result;
     }
@@ -89,7 +124,9 @@ public class AIServiceImpl implements AIService {
     public String assessDifficulty(String content) {
         String result = chat(
                 "Assess the English difficulty level of this article. Reply with only one word: EASY, MEDIUM, or HARD.",
-                content.length() > 1000 ? content.substring(0, 1000) : content
+            content.length() > 900 ? content.substring(0, 900) : content,
+            DIFFICULTY_TOKENS,
+            0.0
         );
         if (result.toUpperCase().contains("EASY")) return "EASY";
         if (result.toUpperCase().contains("HARD")) return "HARD";
@@ -103,12 +140,16 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public Map<String, String> lookupText(String text, String context, String type) {
+        String shortenedContext = context == null ? "" : context;
+        if (shortenedContext.length() > 240) {
+            shortenedContext = shortenedContext.substring(0, 240);
+        }
         String prompt = String.format(
                 "Text: \"%s\"\nContext: \"%s\"\nType: %s\n" +
-                "Return JSON with keys definition, chinese, example. " +
+                "Return compact JSON with keys definition, chinese, example. " +
                 "If type is sentence, definition should explain the sentence meaning in English and example can be empty.",
-                text, context, type == null ? "word" : type);
-        String result = chat("You are an English learning assistant.", prompt);
+                text, shortenedContext, type == null ? "word" : type);
+        String result = chat("You are an English learning assistant.", prompt, LOOKUP_TOKENS, 0.15);
         try {
             // clean markdown code blocks if present
             result = result.replaceAll("```json|```", "").trim();
@@ -125,14 +166,18 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public List<Map<String, Object>> generateExercises(String content, String level, Integer count) {
+        int exerciseCount = count == null ? 5 : Math.max(3, Math.min(8, count));
+        String shortenedContent = content.length() > 1200 ? content.substring(0, 1200) : content;
         String prompt = String.format(
                 "Article:\n%s\n\n" +
-                "Generate %d English learning exercises for a %s level student. " +
-                "Include a mix of vocabulary, comprehension, and grammar questions. " +
-                "Return JSON array: [{\"type\":\"COMPREHENSION\",\"question\":\"...\",\"options\":[\"A. ...\",\"B. ...\",\"C. ...\",\"D. ...\"],\"correctAnswer\":\"A\",\"explanation\":\"...\"}]",
-                content.length() > 2000 ? content.substring(0, 2000) : content, count, level);
+            "Generate %d English learning multiple-choice exercises for a %s student. " +
+            "Must include vocabulary, comprehension and grammar types. " +
+            "Each question has exactly 4 options (A-D), short explanation <= 28 words. " +
+            "Return only JSON array with items: " +
+            "{\"type\":\"COMPREHENSION\",\"question\":\"...\",\"options\":[\"A. ...\",\"B. ...\",\"C. ...\",\"D. ...\"],\"correctAnswer\":\"A\",\"explanation\":\"...\"}",
+            shortenedContent, exerciseCount, level);
 
-        String result = chat("You are an English teacher creating quiz questions.", prompt);
+        String result = chat("You are an English teacher creating quiz questions.", prompt, EXERCISE_TOKENS, 0.35);
         try {
             result = result.replaceAll("```json|```", "").trim();
             JsonNode array = objectMapper.readTree(result);
@@ -146,10 +191,10 @@ public class AIServiceImpl implements AIService {
                 ex.put("explanation", node.path("explanation").asText());
                 exercises.add(ex);
             }
-            return exercises;
+            return exercises.isEmpty() ? fallbackExercises(shortenedContent, exerciseCount) : exercises;
         } catch (Exception e) {
             log.error("Failed to parse exercise JSON", e);
-            return Collections.emptyList();
+            return fallbackExercises(shortenedContent, exerciseCount);
         }
     }
 
@@ -159,7 +204,7 @@ public class AIServiceImpl implements AIService {
                 "Question: %s\nUser's answer: %s\nCorrect answer: %s\nContext: %s\n" +
                 "Provide a brief explanation (2-3 sentences) of why the correct answer is right, in English.",
                 question, userAnswer, correctAnswer, context);
-        return chat("You are a helpful English teacher.", prompt);
+        return chat("You are a helpful English teacher.", prompt, EVAL_TOKENS, 0.25);
     }
 
     @Override
@@ -177,10 +222,41 @@ public class AIServiceImpl implements AIService {
         }
         String prompt = "Article content:\n" + snippet + "\n\nConversation history:\n" + historyText +
                 "\nUser question:\n" + question;
-        String answer = chat("You are an article reading copilot. Answer only based on the article. If unclear, say what is missing.", prompt);
+        String answer = chat(
+                "You are an article reading copilot. Answer only based on the article. If unclear, say what is missing.",
+                prompt,
+                ARTICLE_CHAT_TOKENS,
+                0.2
+        );
         if (!StringUtils.hasText(answer)) {
             return "当前 AI 服务不可用，请稍后重试。";
         }
         return answer;
+    }
+
+    private List<Map<String, Object>> fallbackExercises(String content, int count) {
+        String[] sentences = content == null ? new String[0] : content.split("\\n");
+        List<String> usable = new ArrayList<>();
+        for (String s : sentences) {
+            String trimmed = s == null ? "" : s.trim();
+            if (trimmed.length() >= 35) usable.add(trimmed);
+            if (usable.size() >= 3) break;
+        }
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        int total = Math.max(3, count);
+        for (int i = 0; i < total; i++) {
+            String base = usable.isEmpty() ? "English reading improves vocabulary and comprehension over time." : usable.get(i % usable.size());
+            String stem = base.length() > 90 ? base.substring(0, 90) + "..." : base;
+
+            Map<String, Object> ex = new HashMap<>();
+            ex.put("type", i % 3 == 0 ? "VOCABULARY" : (i % 3 == 1 ? "COMPREHENSION" : "GRAMMAR"));
+            ex.put("question", "What is the best interpretation of this sentence? " + stem);
+            ex.put("options", "[\"A. It explains a key point from the article\",\"B. It introduces unrelated data\",\"C. It is an advertisement statement\",\"D. It denies the article topic\"]");
+            ex.put("correctAnswer", "A");
+            ex.put("explanation", "The sentence summarizes or supports the article's main idea.");
+            list.add(ex);
+        }
+        return list;
     }
 }

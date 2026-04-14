@@ -2,7 +2,7 @@
   <teleport to="body">
     <div
       class="word-popover"
-      :style="{ left: safeX + 'px', top: safeY + 'px' }"
+      :style="{ left: safeX + 'px', top: safeY + 'px', width: panelWidth + 'px' }"
       v-if="resultInfo || loading"
     >
       <div class="popover-header">
@@ -56,15 +56,22 @@ const resultInfo = ref(null)
 const loading = ref(false)
 const safeX = ref(0)
 const safeY = ref(0)
+const panelWidth = ref(320)
 const modeLabel = computed(() => (props.mode === 'sentence' ? '句子' : '词汇'))
 
-watch(() => props.text, async (w) => {
+watch(() => [props.text, props.position.x, props.position.y], async ([w]) => {
   if (!w) return
   resultInfo.value = null
   loading.value = true
   // 计算安全位置（避免超出屏幕）
-  safeX.value = Math.min(props.position.x, window.innerWidth - 340)
-  safeY.value = props.position.y + 16
+  panelWidth.value = Math.min(320, Math.max(260, window.innerWidth - 24))
+  const maxX = Math.max(12, window.innerWidth - panelWidth.value - 12)
+  safeX.value = Math.max(12, Math.min(props.position.x, maxX))
+
+  const belowY = props.position.y + 16
+  const aboveY = props.position.y - 220
+  safeY.value = belowY > window.innerHeight - 24 ? Math.max(12, aboveY) : belowY
+
   try {
     resultInfo.value = await lookupTextApi({ text: w, context: props.context, type: props.mode })
   } finally {
@@ -81,7 +88,6 @@ watch(() => props.text, async (w) => {
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0,0,0,.18);
   padding: 16px;
-  width: 320px;
   border: 1px solid #e4e7ed;
 }
 .popover-header {
@@ -110,4 +116,11 @@ watch(() => props.text, async (w) => {
   color: #67C23A;
 }
 .loading { padding: 8px 0; }
+
+@media (max-width: 768px) {
+  .word-popover {
+    padding: 12px;
+    border-radius: 10px;
+  }
+}
 </style>

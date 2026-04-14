@@ -198,6 +198,13 @@ function resolvePopoverPosition(e, range) {
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 }
 }
 
+let selectionTimer = null
+function onSelectionChange() {
+  if (!articleContentRef.value) return
+  if (selectionTimer) window.clearTimeout(selectionTimer)
+  selectionTimer = window.setTimeout(() => applySelection(), 120)
+}
+
 async function sendChat() {
   const question = chatInput.value.trim()
   if (!question || !article.value) return
@@ -242,6 +249,8 @@ function goToExercise() {
 
 let startTime = Date.now()
 onUnmounted(async () => {
+  document.removeEventListener('selectionchange', onSelectionChange)
+  if (selectionTimer) window.clearTimeout(selectionTimer)
   if (article.value) {
     const duration = Math.round((Date.now() - startTime) / 1000)
     await recordActionApi({ articleId: article.value.id, actionType: 'READ', duration })
@@ -249,6 +258,7 @@ onUnmounted(async () => {
 })
 
 onMounted(async () => {
+  document.addEventListener('selectionchange', onSelectionChange)
   try {
     article.value = await getArticleDetailApi(route.params.id)
     await recordActionApi({ articleId: route.params.id, actionType: 'READ' })
