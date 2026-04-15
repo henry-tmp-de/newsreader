@@ -14,6 +14,7 @@ import org.springframework.http.*;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
@@ -23,7 +24,10 @@ public class AIServiceImpl implements AIService {
     private static final int SUMMARY_TOKENS = 220;
     private static final int KEYWORD_TOKENS = 120;
     private static final int DIFFICULTY_TOKENS = 12;
-    private static final int LOOKUP_TOKENS = 180;
+    private static final int LOOKUP_TOKENS = 120;
+        private static final long API_KEY_CACHE_MS = 60_000L;
+        private static final String DEFAULT_FALLBACK_MODEL = "deepseek-chat";
+
     private static final int EXERCISE_TOKENS = 880;
     private static final int EVAL_TOKENS = 130;
     private static final int ARTICLE_CHAT_TOKENS = 700;
@@ -37,12 +41,18 @@ public class AIServiceImpl implements AIService {
     @Value("${deepseek.model}")
     private String model;
 
+    @Value("${deepseek.fast-model:deepseek-chat}")
+    private String fastModel;
+
     @Value("${deepseek.max-tokens}")
     private Integer maxTokens;
 
     private final SystemConfigService systemConfigService;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private volatile String runtimeModel;
+    private volatile String cachedApiKey;
+    private volatile long apiKeyCacheAt;
 
     public AIServiceImpl(SystemConfigService systemConfigService) {
         this.systemConfigService = systemConfigService;
@@ -66,18 +76,41 @@ public class AIServiceImpl implements AIService {
     }
 
     private String chat(String systemPrompt, String userContent, Integer requestMaxTokens, Double temperature) {
-        try {
-            String resolvedApiKey = systemConfigService.getDeepseekApiKey();
-            if (!StringUtils.hasText(resolvedApiKey) || resolvedApiKey.contains("your_deepseek_api_key")) {
-                return "";
-            }
+        return chatInternal(systemPrompt, userContent, requestMaxTokens, temperature, false);
+    }
 
+    private String chatFast(String systemPrompt, String userContent, Integer requestMaxTokens, Double temperature) {
+        return chatInternal(systemPrompt, userContent, requestMaxTokens, temperature, true);
+    }
+
+    private String chatInternal(String systemPrompt,
+                                String userContent,
+                                Integer requestMaxTokens,
+                                Double temperature,
+                                boolean preferFastModel) {
+        String resolvedApiKey = getCachedDeepseekApiKey();
+        if (!StringUtils.hasText(resolvedApiKey) || resolvedApiKey.contains("your_deepseek_api_key")) {
+            return "";
+        }
+        String modelToUse = resolveModel(preferFastModel);
+        return chatWithModel(systemPrompt, userContent, requestMaxTokens, temperature, modelToUse, resolvedApiKey, true);
+    }
+
+    @SuppressWarnings("null")
+    private String chatWithModel(String systemPrompt,
+                                 String userContent,
+                                 Integer requestMaxTokens,
+                                 Double temperature,
+                                 String modelName,
+                                 String resolvedApiKey,
+                                 boolean allowFallback) {
+        try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(resolvedApiKey);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("model", model);
+            body.put("model", modelName);
                 body.put("max_tokens", Math.max(64, requestMaxTokens == null ? maxTokens : requestMaxTokens));
                 body.put("temperature", temperature == null ? 0.2 : temperature);
                 body.put("stream", false);
@@ -91,7 +124,22 @@ public class AIServiceImpl implements AIService {
                     baseUrl + "/chat/completions", entity, String.class);
 
             JsonNode root = objectMapper.readTree(response.getBody());
+            runtimeModel = modelName;
             return root.path("choices").get(0).path("message").path("content").asText();
+        } catch (HttpStatusCodeException e) {
+            String body = e.getResponseBodyAsString();
+            if (body != null
+                    && body.contains("Model Not Exist")
+                    && allowFallback) {
+                String fallbackModel = resolveFallbackModel();
+                if (!fallbackModel.equalsIgnoreCase(modelName)) {
+                    runtimeModel = fallbackModel;
+                    log.warn("Configured model {} not found, fallback to {}", modelName, fallbackModel);
+                    return chatWithModel(systemPrompt, userContent, requestMaxTokens, temperature, fallbackModel, resolvedApiKey, false);
+                }
+            }
+            log.error("DeepSeek API call failed. status={}, body={}", e.getStatusCode().value(), body);
+            return "";
         } catch (Exception e) {
             log.error("DeepSeek API call failed", e);
             return "";
@@ -149,7 +197,7 @@ public class AIServiceImpl implements AIService {
                 "Return compact JSON with keys definition, chinese, example. " +
                 "If type is sentence, definition should explain the sentence meaning in English and example can be empty.",
                 text, shortenedContext, type == null ? "word" : type);
-        String result = chat("You are an English learning assistant.", prompt, LOOKUP_TOKENS, 0.15);
+        String result = chatFast("You are an English learning assistant.", prompt, LOOKUP_TOKENS, 0.1);
         try {
             // clean markdown code blocks if present
             result = result.replaceAll("```json|```", "").trim();
@@ -162,6 +210,34 @@ public class AIServiceImpl implements AIService {
         } catch (Exception e) {
             return Map.of("definition", result, "chinese", "", "example", "");
         }
+    }
+
+    private String getCachedDeepseekApiKey() {
+        long now = System.currentTimeMillis();
+        if (cachedApiKey != null && (now - apiKeyCacheAt) < API_KEY_CACHE_MS) {
+            return cachedApiKey;
+        }
+        String fresh = systemConfigService.getDeepseekApiKey();
+        cachedApiKey = fresh;
+        apiKeyCacheAt = now;
+        return fresh;
+    }
+
+    private String resolveModel(boolean preferFastModel) {
+        if (preferFastModel && StringUtils.hasText(fastModel)) {
+            return fastModel.trim();
+        }
+        if (StringUtils.hasText(runtimeModel)) {
+            return runtimeModel;
+        }
+        return model;
+    }
+
+    private String resolveFallbackModel() {
+        if (StringUtils.hasText(fastModel)) {
+            return fastModel.trim();
+        }
+        return DEFAULT_FALLBACK_MODEL;
     }
 
     @Override

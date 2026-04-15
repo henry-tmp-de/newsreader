@@ -7,6 +7,8 @@ import com.newsreader.entity.Article;
 import com.newsreader.service.ArticleService;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -50,7 +52,21 @@ public class ArticleController {
                 ((List<?>) body.get("categories")).stream().map(String::valueOf).toList() : null;
         Integer pageSize = body.get("pageSize") != null ?
                 Integer.parseInt(body.get("pageSize").toString()) : 10;
-        NewsFetchResultDTO result = articleService.fetchAndSaveFromNewsAPI(categories, pageSize);
+
+        String fromDateRaw = body.get("fromDate") == null ? null : body.get("fromDate").toString();
+        String toDateRaw = body.get("toDate") == null ? null : body.get("toDate").toString();
+        boolean useDateRange = body.get("useDateRange") != null && Boolean.parseBoolean(body.get("useDateRange").toString());
+
+        LocalDateTime fromDate = parseDateTime(fromDateRaw);
+        LocalDateTime toDate = parseDateTime(toDateRaw);
+        if (useDateRange && (fromDate == null || toDate == null)) {
+            return Result.fail(400, "请填写完整的开始和结束时间");
+        }
+        if (useDateRange && fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            return Result.fail(400, "日期范围无效：开始时间不能晚于结束时间");
+        }
+
+        NewsFetchResultDTO result = articleService.fetchAndSaveFromNewsAPI(categories, pageSize, fromDate, toDate, useDateRange);
         return Result.success(result);
     }
 
@@ -110,6 +126,17 @@ public class ArticleController {
         try {
             return Long.parseLong(value.toString());
         } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private LocalDateTime parseDateTime(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value.trim());
+        } catch (DateTimeParseException e) {
             return null;
         }
     }

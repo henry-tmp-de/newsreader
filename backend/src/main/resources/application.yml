@@ -34,7 +34,7 @@ mybatis-plus:
       logic-not-delete-value: 0
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 # JWT configuration
 jwt:
@@ -50,10 +50,11 @@ news-api:
 deepseek:
   api-key: your_deepseek_api_key
   base-url: https://api.deepseek.com/v1
-  model: deepseek-v3
+  model: deepseek-chat
+  fast-model: deepseek-chat
   max-tokens: 2000
 
 logging:
   level:
-    com.newsreader: DEBUG
+    com.newsreader: INFO
     org.springframework.security: INFO

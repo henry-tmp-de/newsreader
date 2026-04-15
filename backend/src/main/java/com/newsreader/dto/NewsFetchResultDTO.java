@@ -10,8 +10,12 @@ public class NewsFetchResultDTO {
     private int duplicatedInTask;
     private int skippedNoContent;
     private int failed;
+    private int rateLimited;
     private int enqueuedForEnrichment;
     private int purgedInvalid;
     private int stagnationBreaks;
     private String note;
+    private String effectiveFrom;
+    private String effectiveTo;
+    private boolean useDateRange;
 }

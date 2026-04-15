@@ -23,14 +23,20 @@ import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 @Service
@@ -49,6 +55,7 @@ public class ArticleServiceImpl implements ArticleService {
     private static final int MIN_ARTICLE_WORD_COUNT = 30;
     private static final double EXTRA_FETCH_RATIO = 0.15;
     private static final int MAX_FETCH_ROUNDS_PER_CATEGORY = 8;
+    private static final int MAX_STAGNANT_ROUNDS_PER_CATEGORY = 2;
     private static final Pattern TRUNCATED_SUFFIX_PATTERN = Pattern.compile("\\[\\+\\d+\\s+chars]$");
 
     public ArticleServiceImpl(ArticleMapper articleMapper,
@@ -114,12 +121,22 @@ public class ArticleServiceImpl implements ArticleService {
     @Scheduled(fixedDelay = 3600000) // 每小时拉取一次
     @SuppressWarnings("null")
     public NewsFetchResultDTO fetchAndSaveFromNewsAPI() {
-        return fetchAndSaveFromNewsAPI(null, 10);
+        return fetchAndSaveFromNewsAPI(null, 10, null, null, false);
     }
 
     @Override
     @SuppressWarnings("null")
     public NewsFetchResultDTO fetchAndSaveFromNewsAPI(List<String> categories, Integer pageSize) {
+        return fetchAndSaveFromNewsAPI(categories, pageSize, null, null, false);
+    }
+
+    @Override
+    @SuppressWarnings("null")
+    public NewsFetchResultDTO fetchAndSaveFromNewsAPI(List<String> categories,
+                                                      Integer pageSize,
+                                                      LocalDateTime fromDate,
+                                                      LocalDateTime toDate,
+                                                      boolean useDateRange) {
         String newsApiKey = systemConfigService.getNewsApiKey();
         if (!StringUtils.hasText(newsApiKey) || newsApiKey.contains("your_newsapi_key")) {
             throw new RuntimeException("请先在系统配置中填写 NewsAPI Key");
@@ -131,23 +148,72 @@ public class ArticleServiceImpl implements ArticleService {
         }
 
         NewsFetchResultDTO result = new NewsFetchResultDTO();
+        result.setPurgedInvalid(purgedInvalid);
         List<String> selectedCategories = normalizeCategories(categories);
         int safePageSize = normalizePageSize(pageSize);
 
+        LocalDateTime effectiveTo = toDate == null ? LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS) : toDate;
+        result.setUseDateRange(useDateRange);
+        result.setEffectiveTo(effectiveTo.toString());
+
+        log.info("Start custom fetch: categories={}, perCategoryTarget={}, useDateRange={}, from={}, to={}",
+                selectedCategories, safePageSize, useDateRange, fromDate, effectiveTo);
+
         for (String category : selectedCategories) {
-            fetchCategoryUntilTarget(category, safePageSize, newsApiKey, result);
+            LocalDateTime incrementalFrom = resolveIncrementalFrom(category);
+            LocalDateTime effectiveFrom = useDateRange
+                    ? (fromDate == null ? incrementalFrom : fromDate)
+                    : incrementalFrom;
+
+            if (result.getEffectiveFrom() == null || result.getEffectiveFrom().isBlank()) {
+                result.setEffectiveFrom(effectiveFrom.toString());
+            }
+
+            int insertedForCategory = fetchCategoryUntilTarget(
+                    category,
+                    safePageSize,
+                    newsApiKey,
+                    result,
+                    effectiveFrom,
+                    effectiveTo,
+                    useDateRange);
+
+            // 默认增量模式下，无论是否新增都推进锚点，避免重复扫同一窗口
+            if (!useDateRange) {
+                systemConfigService.saveCategoryLastFetchAt(category, effectiveTo);
+            }
+
+            if (insertedForCategory == 0) {
+                log.info("No new insertions for category={} within window {} -> {}",
+                        category, effectiveFrom, effectiveTo);
+            }
         }
 
         result.setEnqueuedForEnrichment(result.getInserted());
+        if (result.getRateLimited() > 0) {
+            result.setNote("NewsAPI 请求受限（429 Too Many Requests），请稍后重试或更换 API Key。");
+        } else if (result.getInserted() == 0 && result.getDuplicated() > 0 && result.getFailed() == 0) {
+            result.setNote("本次抓取未发现新增文章，可能上游暂无新内容。可以稍后再试。");
+        } else if (result.getInserted() < selectedCategories.size() * safePageSize) {
+            result.setNote("部分文章因重复或内容质量不足被过滤，未完全达到每板块目标数量。");
+        }
         articleEnrichmentService.enrichPendingArticlesAsync();
         return result;
     }
 
     @SuppressWarnings("null")
-    private void fetchCategoryUntilTarget(String category, int targetInsertCount, String newsApiKey, NewsFetchResultDTO result) {
+    private int fetchCategoryUntilTarget(String category,
+                                         int targetInsertCount,
+                                         String newsApiKey,
+                                         NewsFetchResultDTO result,
+                                         LocalDateTime fromDate,
+                                         LocalDateTime toDate,
+                                         boolean useDateRange) {
         int insertedForCategory = 0;
         int page = 1;
         int rounds = 0;
+        int stagnantRounds = 0;
+        Set<String> seenUrlsInTask = new HashSet<>();
 
         while (insertedForCategory < targetInsertCount && rounds < MAX_FETCH_ROUNDS_PER_CATEGORY) {
             try {
@@ -155,9 +221,7 @@ public class ArticleServiceImpl implements ArticleService {
                 int requestPageSize = (int) Math.ceil(remaining * (1 + EXTRA_FETCH_RATIO));
                 requestPageSize = Math.max(1, Math.min(50, requestPageSize));
 
-                String url = String.format(
-                        "%s/top-headlines?category=%s&language=en&pageSize=%d&page=%d&apiKey=%s",
-                        NEWS_API_BASE_URL, category, requestPageSize, page, newsApiKey);
+                String url = buildNewsApiUrl(category, requestPageSize, page, newsApiKey, fromDate, toDate, useDateRange);
 
                 var responseEntity = restTemplate.getForEntity(url, String.class);
                 String response = responseEntity.getBody();
@@ -183,12 +247,25 @@ public class ArticleServiceImpl implements ArticleService {
                     break;
                 }
 
+                int insertedThisRound = 0;
                 for (JsonNode node : articles) {
+                    String articleUrl = node.path("url").asText();
+                    if (StringUtils.hasText(articleUrl)) {
+                        if (seenUrlsInTask.contains(articleUrl)) {
+                            result.setFetched(result.getFetched() + 1);
+                            result.setDuplicated(result.getDuplicated() + 1);
+                            result.setDuplicatedInTask(result.getDuplicatedInTask() + 1);
+                            continue;
+                        }
+                        seenUrlsInTask.add(articleUrl);
+                    }
+
                     result.setFetched(result.getFetched() + 1);
                     SaveOutcome outcome = saveArticleFromNode(node, category);
                     if (outcome == SaveOutcome.INSERTED) {
                         result.setInserted(result.getInserted() + 1);
                         insertedForCategory++;
+                        insertedThisRound++;
                     } else if (outcome == SaveOutcome.DUPLICATED) {
                         result.setDuplicated(result.getDuplicated() + 1);
                     } else if (outcome == SaveOutcome.SKIPPED_NO_CONTENT) {
@@ -202,8 +279,30 @@ public class ArticleServiceImpl implements ArticleService {
                     }
                 }
 
+                if (insertedThisRound == 0) {
+                    stagnantRounds++;
+                } else {
+                    stagnantRounds = 0;
+                }
+
+                if (stagnantRounds >= MAX_STAGNANT_ROUNDS_PER_CATEGORY) {
+                    result.setStagnationBreaks(result.getStagnationBreaks() + 1);
+                    log.info("Stop category {} early due to {} stagnant rounds", category, stagnantRounds);
+                    break;
+                }
+
                 page++;
                 rounds++;
+            } catch (HttpStatusCodeException e) {
+                result.setFailed(result.getFailed() + 1);
+                if (e.getStatusCode().value() == 429) {
+                    result.setRateLimited(result.getRateLimited() + 1);
+                    log.warn("NewsAPI rate limited: category={}, page={}, body={}", category, page, e.getResponseBodyAsString());
+                } else {
+                    log.error("Failed to fetch news for category: {}, page: {}, status: {}, body: {}",
+                            category, page, e.getStatusCode().value(), e.getResponseBodyAsString());
+                }
+                break;
             } catch (Exception e) {
                 result.setFailed(result.getFailed() + 1);
                 log.error("Failed to fetch news for category: {}, page: {}", category, page, e);
@@ -215,6 +314,60 @@ public class ArticleServiceImpl implements ArticleService {
             log.warn("Category {} reached fetch limit before target: inserted={}, target={}",
                     category, insertedForCategory, targetInsertCount);
         }
+        return insertedForCategory;
+    }
+
+    private String buildNewsApiUrl(String category,
+                                   int pageSize,
+                                   int page,
+                                   String apiKey,
+                                   LocalDateTime fromDate,
+                                   LocalDateTime toDate,
+                                   boolean useDateRange) {
+        boolean hasWindow = fromDate != null && toDate != null;
+        if (hasWindow) {
+            String query = URLEncoder.encode(categoryToQuery(category), StandardCharsets.UTF_8);
+            return String.format(
+                    "%s/everything?q=%s&language=en&sortBy=publishedAt&pageSize=%d&page=%d&from=%s&to=%s&apiKey=%s",
+                    NEWS_API_BASE_URL,
+                    query,
+                    pageSize,
+                    page,
+                    formatForNewsApi(fromDate),
+                    formatForNewsApi(toDate),
+                    apiKey);
+        }
+
+        return String.format(
+                "%s/top-headlines?category=%s&language=en&pageSize=%d&page=%d&apiKey=%s",
+                NEWS_API_BASE_URL,
+                category,
+                pageSize,
+                page,
+                apiKey);
+    }
+
+    private String categoryToQuery(String category) {
+        return switch (category) {
+            case "technology" -> "technology OR software OR AI";
+            case "science" -> "science OR research OR discovery";
+            case "health" -> "health OR medicine OR wellness";
+            case "business" -> "business OR market OR economy";
+            case "sports" -> "sports OR match OR league";
+            default -> category;
+        };
+    }
+
+    private String formatForNewsApi(LocalDateTime value) {
+        return value.truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+
+    private LocalDateTime resolveIncrementalFrom(String category) {
+        LocalDateTime lastFetch = systemConfigService.getCategoryLastFetchAt(category);
+        if (lastFetch != null) {
+            return lastFetch;
+        }
+        return LocalDateTime.now().minusDays(2).truncatedTo(ChronoUnit.SECONDS);
     }
 
     private List<String> normalizeCategories(List<String> categories) {
@@ -377,9 +530,9 @@ public class ArticleServiceImpl implements ArticleService {
     private boolean isContentIncomplete(String content) {
         return !isContentQualified(content)
             || content.length() < MIN_ARTICLE_CONTENT_LENGTH;
-        }
+    }
 
-        private boolean isContentQualified(String content) {
+    private boolean isContentQualified(String content) {
         return StringUtils.hasText(content)
             && !isLikelyTruncatedByNewsApi(content)
             && getWordCount(content) >= MIN_ARTICLE_WORD_COUNT;

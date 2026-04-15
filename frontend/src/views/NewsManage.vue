@@ -18,10 +18,23 @@
           <el-input-number v-model="pageSize" :min="1" :max="50" />
         </el-form-item>
         <el-form-item>
+          <el-switch v-model="useDateRange" active-text="按日期范围抓取" inactive-text="默认增量抓取" />
+        </el-form-item>
+        <el-form-item v-if="useDateRange" label="日期范围">
+          <el-date-picker
+            v-model="dateRange"
+            type="datetimerange"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            class="range-picker"
+          />
+        </el-form-item>
+        <el-form-item>
           <el-button type="primary" :loading="fetching" @click="handleCustomFetch">开始更新</el-button>
         </el-form-item>
       </el-form>
-      <p class="hint">不选板块时默认更新全部板块（technology/science/health/business/sports）。</p>
+      <p class="hint">不选板块时默认更新全部板块（technology/science/health/business/sports）。未开启日期范围时，默认从上次抓取时间开始增量更新。</p>
     </section>
 
     <section class="paper list-panel">
@@ -80,6 +93,8 @@ const loading = ref(false)
 const fetching = ref(false)
 const selectedCategories = ref([])
 const pageSize = ref(10)
+const useDateRange = ref(false)
+const dateRange = ref([])
 const categories = [
   { label: '科技', value: 'technology' },
   { label: '科学', value: 'science' },
@@ -120,13 +135,45 @@ function handlePageChange() {
 }
 
 async function handleCustomFetch() {
+  if (useDateRange.value && (!Array.isArray(dateRange.value) || dateRange.value.length !== 2)) {
+    ElMessage.warning('请选择完整的开始和结束时间')
+    return
+  }
+
   fetching.value = true
   try {
     const result = await fetchNewsCustomApi({
       categories: selectedCategories.value,
       pageSize: pageSize.value,
+      useDateRange: useDateRange.value,
+      fromDate: useDateRange.value ? dateRange.value[0] : undefined,
+      toDate: useDateRange.value ? dateRange.value[1] : undefined,
     })
-    ElMessage.success(`更新完成：抓取 ${result.fetched}，新增 ${result.inserted}，重复 ${result.duplicated}`)
+    const extra = [
+      `抓取 ${result.fetched || 0}`,
+      `新增 ${result.inserted || 0}`,
+      `重复 ${result.duplicated || 0}`,
+      `质量过滤 ${result.skippedNoContent || 0}`,
+    ]
+    if (result.rateLimited > 0) {
+      extra.push(`限流 ${result.rateLimited}`)
+    }
+    if (result.purgedInvalid > 0) {
+      extra.push(`清理历史无效 ${result.purgedInvalid}`)
+    }
+    if (result.duplicatedInTask > 0) {
+      extra.push(`任务内重复 ${result.duplicatedInTask}`)
+    }
+    if (result.stagnationBreaks > 0) {
+      extra.push(`提前停止 ${result.stagnationBreaks} 次`)
+    }
+    ElMessage.success(`更新完成：${extra.join('，')}`)
+    if (result.note) {
+      ElMessage.warning(result.note)
+    }
+    if (result.effectiveFrom && result.effectiveTo) {
+      ElMessage.info(`实际抓取窗口：${result.effectiveFrom} -> ${result.effectiveTo}`)
+    }
     await loadArticles(true)
   } catch (e) {
     ElMessage.error(e?.message || '更新失败，请稍后重试')
@@ -207,6 +254,7 @@ onMounted(() => loadArticles(true))
 .table-actions { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .left { display: flex; gap: 10px; }
 .category-select { width: 380px; }
+.range-picker { width: 360px; }
 .keyword-input { width: 280px; }
 .table-scroll { width: 100%; overflow-x: auto; }
 .pagination { margin-top: 14px; display: flex; justify-content: center; }
@@ -214,6 +262,7 @@ onMounted(() => loadArticles(true))
   .table-actions { flex-direction: column; }
   .left { flex-wrap: wrap; }
   .category-select,
+  .range-picker,
   .keyword-input { width: 100%; }
 }
 </style>

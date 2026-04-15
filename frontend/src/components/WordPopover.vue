@@ -95,6 +95,12 @@ watch(() => props.text, async (newText) => {
   updatePosition()
   try {
     resultInfo.value = await lookupTextApi({ text: newText, context: props.context, type: props.mode })
+  } catch (e) {
+    resultInfo.value = {
+      definition: '翻译服务暂时不可用，请稍后重试。',
+      chinese: '',
+      example: '',
+    }
   } finally {
     loading.value = false
   }

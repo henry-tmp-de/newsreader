@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,6 +23,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     private static final String KEY_NEWS_API = "news_api_key";
     private static final String KEY_DEEPSEEK_API = "deepseek_api_key";
+    private static final String KEY_LAST_FETCH_PREFIX = "last_fetch_at_";
 
     private final SystemConfigMapper systemConfigMapper;
 
@@ -70,6 +72,33 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         return StringUtils.hasText(fromDb) ? fromDb : defaultDeepseekApiKey;
     }
 
+    @Override
+    public LocalDateTime getCategoryLastFetchAt(String category) {
+        String key = buildLastFetchKey(category);
+        if (!StringUtils.hasText(key)) {
+            return null;
+        }
+        String value = getConfig(key);
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid last fetch timestamp. key={}, value={}", key, value);
+            return null;
+        }
+    }
+
+    @Override
+    public void saveCategoryLastFetchAt(String category, LocalDateTime fetchAt) {
+        String key = buildLastFetchKey(category);
+        if (!StringUtils.hasText(key) || fetchAt == null) {
+            return;
+        }
+        upsert(key, fetchAt.toString());
+    }
+
     private void upsert(String key, String value) {
         try {
             SystemConfig exists = systemConfigMapper.selectOne(
@@ -106,5 +135,12 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         return lower.contains("your_newsapi_key")
                 || lower.contains("your_deepseek_api_key")
                 || lower.contains("your_openai_api_key");
+    }
+
+    private String buildLastFetchKey(String category) {
+        if (!StringUtils.hasText(category)) {
+            return null;
+        }
+        return KEY_LAST_FETCH_PREFIX + category.trim().toLowerCase();
     }
 }
